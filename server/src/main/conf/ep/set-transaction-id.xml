@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<groovy-data-retriever-config id="setting-transactionId">
+	<data name='external_id'>
+		request.transactionId
+	</data>
+	<data name='bgh_filename'>
+		request.file.name
+	</data>
+	<data name="set_pdffile">
+		// adding format list
+		if (request.attributes.format == null) {
+		    request.attributes.format = new ArrayList();
+	    }
+		request.attributes.format.add("requests.format.aspdf");
+		// adding file into PDF format
+		if (request.attributes.generatedFiles == null) {
+		    request.attributes.generatedFiles = new HashMap();
+	    }
+		pdffile = "/appl/billcheckout/input/pdf/" + request.file.name.substring(0, request.file.name.length()-7) + ".pdf";
+		request.attributes.generatedFiles.put("requests.format.aspdf", pdffile);
+	</data>
+	<data name="setConsequenceTransactionId">
+		consequence_list.each() { result ->
+			result.transactionId = external_id;
+			result.filename = bgh_filename;
+		}
+	</data>
+</groovy-data-retriever-config>
+

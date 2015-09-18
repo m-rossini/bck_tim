@@ -1,0 +1,10 @@
+LOAD DATA
+BADFILE 'log/usagegroup.bad'
+DISCARDFILE 'log/usagegroup.dsc'
+APPEND
+INTO TABLE QLF_USAGE_GROUP
+FIELDS TERMINATED BY ","
+( 
+ 	OBJID 				EXPRESSION "seq1.nextval", 
+	NAME		 			position(1:2048) "loader.word(:name,3,';')"
+)

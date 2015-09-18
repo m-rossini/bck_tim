@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="load-usages" default="run">
+
+  <property environment="env" />
+  <property name="config.builder" value="default" />
+  <property name="config.dir" value="conf" />
+
+  <!-- The classpath -->
+  <path id="classpath.base">
+    <fileset dir="${basedir}/lib" includes="*,**/*" />
+    <pathelement location="${ant.home}/lib/ant.jar" />
+  </path>
+
+  <target name="prepare">
+  	<delete failonerror="false">
+  		<fileset dir="${env.BCK_BASEDIR}/log" includes="usage-loader.???"/>
+  	</delete>
+  </target>
+
+  <target name="run" depends="prepare">
+
+    <tstamp prefix="start">
+      <format property="TIMESTAMP" pattern="dd/MM/yyyy HH:mm:ss.SSS" />
+      <format property="DSTAMP" pattern="yyyy-MM-dd" />
+    </tstamp>
+    <echo message="Current Timestamp: ${start.TIMESTAMP}" />
+    <echo message="Processing usages - please wait..." />
+
+    <java classname="br.com.auster.tim.billcheckout.DuplicityBootstrap"
+          classpathref="classpath.base"
+          output="${env.BCK_BASEDIR}/log/usage-loader.out"
+          error="${env.BCK_BASEDIR}/log/usage-loader.err"
+    	  append="false"
+          resultproperty="java.result"
+          fork="true"
+          maxmemory="${env.BCK_LOADERMEM}"
+          dir="${basedir}">
+      <jvmarg value="-server" />
+      <jvmarg value="-Xms${env.BCK_LOADERMEM}" />
+      <jvmarg value="-Xss256K" />
+      <sysproperty key="app.name" value="AusterUsageLoader" />
+      <sysproperty key="java.awt.headless" value="true" />
+      <sysproperty key="com.sun.management.jmxremote" value="true" />
+      <sysproperty key="br.com.auster.license.path"
+        value="${basedir}/license.bin"/>
+      <sysproperty key="br.com.auster.juglib.dir" value="${basedir}/lib"/>
+      <sysproperty key="br.com.auster.billcheckout.rules.duplicity.basedir"
+                   value="${env.BCK_LOADEROUTPUTDIR}/usage-history"/>
+      <arg value="-x" />
+      <arg value="${basedir}/${config.dir}/duplicity.xml" />
+      <arg value="-b" />
+      <arg value="default" />
+      <arg value="-a" />
+      <arg value="{{bgh={{filenames=${input.file.path}}}}}" />
+      <arg line="-s false"/>
+      <arg line="-u 20000000 -o ASC"/>
+    </java>
+
+    <echo message="Done!" />
+    <tstamp prefix="end">
+      <format property="TIMESTAMP" pattern="dd/MM/yyyy HH:mm:ss.SSS" />
+    </tstamp>
+    <echo message="Current Timestamp: ${end.TIMESTAMP}" />
+
+    <fail message="Usage Loader failed!! Please see the log files for more information.">
+      <condition>
+        <or>
+          <not>
+            <isset property="java.result" />
+          </not>
+          <not>
+            <equals arg1="${java.result}" arg2="0" />
+          </not>
+        </or>
+      </condition>
+    </fail>
+
+  </target>
+
+</project>

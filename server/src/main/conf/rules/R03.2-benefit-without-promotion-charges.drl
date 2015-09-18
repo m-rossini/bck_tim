@@ -1,0 +1,164 @@
+#created on: 14/09/2007
+package br.com.auster.tim.billchekout;
+
+#list any import classes here.
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.tim.billcheckout.bscs.SGTCustomVO;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Identity;
+
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.UsagePromotionDetail;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.om.invoice.ServiceReceiptDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+
+import java.util.List;
+
+import br.com.auster.common.lang.NamedHashMap;
+import br.com.auster.common.rules.GlobalForLog;
+
+#declare any global variables here
+global br.com.auster.billcheckout.model.cache.TaxRateCache taxRateCache;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global br.com.auster.tim.billcheckout.bscs.SGTCustomCache sgtCache;
+global java.util.List results;
+
+
+
+
+function boolean containsValidPromotion(List _promotionList) {
+
+	if (_promotionList == null) { return false; }
+	boolean isValid = false;
+	for (int i=0; i < _promotionList.size(); i++) {
+		UsagePromotionDetail det = (UsagePromotionDetail) _promotionList.get(i);
+		isValid = isValid ||
+		          (det.getPromotionPackage() == null) ||
+		          ( !(det.getPromotionPackage().equals("DPN") || det.getPromotionPackage().equals("DPI")) );
+	}
+	return isValid;
+}
+
+
+rule "Regra R03.2 - Initializing counters"
+	salience 90
+	when
+		Account ()
+	then
+		assert( new NamedHashMap("R03.2") );
+end
+
+
+
+rule "Regra 03.2 - Checking Flat Accounts"
+	salience 70
+	when
+		Account ( accountType == "F" )
+
+		not( ServiceReceiptDetail( subscription == true ) )
+
+		$usage : TIMUsageDetail ( discountAmount > 0,
+								  amountBeforePromotions  > 0,
+								  $promDetails : promotionDetails,
+								  $secname : sectionName,
+								  $cno : contractNumber,
+							 	  $accNumber : channelId
+								)
+
+		$accumulator : NamedHashMap( name == "R03.2" )
+
+		eval ( containsValidPromotion($promDetails) )
+	then
+		String key = $cno + "|" + $accNumber + "|" + $secname;
+		if (! $accumulator.containsKey(key)) {
+			$accumulator.put(key, new Integer(1));
+		} else {
+			Integer prev = (Integer) $accumulator.get(key);
+			$accumulator.put(key, new Integer(prev.intValue()+1));
+		}
+
+end
+
+rule "Regra 03.2 - Checking Large Accounts"
+	salience 70
+	when
+		Account ( accountType == "L" , $custCode : accountNumber )
+
+		not( ServiceReceiptDetail( subscription == true ) )
+
+		$usage : TIMUsageDetail ( discountAmount > 0,
+								  amountBeforePromotions  > 0,
+								  $promDetails : promotionDetails,
+								  $callDate : datetime,
+								  $secname : sectionName,
+								  $cno : contractNumber,
+							 	  $accNumber : channelId
+								)
+
+		$accumulator : NamedHashMap( name == "R03.2" )
+
+		eval ( containsValidPromotion($promDetails) )
+	then
+		//Check for SGT
+		SGTCustomVO vo = (SGTCustomVO) sgtCache.getFromCache(SGTCustomVO.createAlternateKey($custCode, $callDate));
+		// if customer has some subscription fee configured in SGT
+		if ((vo == null) || (vo.getSubscriptionFee() > 0)) {
+			String key = $cno + "|" + $accNumber + "|" + $secname;
+			if (! $accumulator.containsKey(key)) {
+				$accumulator.put(key, new Integer(1));
+			} else {
+				Integer prev = (Integer) $accumulator.get(key);
+				$accumulator.put(key, new Integer(prev.intValue()+1));
+			}
+		}
+end
+
+rule "Regra 03.2 - Build Consequences"
+	salience 50
+	when
+		Account ( $carrierCode : carrierCode, $accountType : accountType )
+
+		$contractSection : ContractInfoSection( $cno : contractNumber,
+							 					$accNumber : accessNbr,
+							 					$rateplan : ratePlan )
+
+		$group : ContractUsageGroupSubsection( $secname : sectionName,
+											   parentSection == $contractSection )
+
+
+		$accumulator : NamedHashMap( name == "R03.2" )
+	then
+		String key =  $cno + "|" + $accNumber + "|" + $secname;
+		if ($accumulator.containsKey(key)) {
+
+			consequenceBuilder.setRule("R03-2", "Beneficio sem cobrança de pct");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence cd = (TelcoConsequence) consequenceBuilder.getConsequence();
+			cd.setDescription("Existem chamadas beneficiadas por promoção sem a cobrança da assinatura correspondente.");
+
+	        cd.addAttribute("Tipo do Cliente", $accountType);
+	        cd.addAttribute("Número do Contrato", $cno);
+	        cd.addAttribute("Número de Acesso", $accNumber);
+	        cd.addAttribute("Plano do Contrato", $rateplan);
+	        cd.addAttribute("Nome da Seção", $secname);
+	        cd.addAttribute("Quantidade de Eventos", (Integer)$accumulator.get(key));
+
+	        results.add(cd);
+		}
+end
+

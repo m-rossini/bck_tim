@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<!DOCTYPE hibernate-mapping PUBLIC
+        "-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+        "etc/hibernate-mapping-3.0.dtd">
+
+<hibernate-mapping>
+
+    <class lazy="false"
+        name="br.com.auster.tim.billcheckout.model.ProgressiveDiscount"
+        table="PROG_DISCOUNT">
+
+		<!-- PK for this class -->
+        <id name="uid"
+            column="OBJID"
+            type="long"
+            unsaved-value="0">
+            <generator class="sequence">
+                <param name="sequence">progressive_discount_uid</param>
+        	</generator>
+        </id>
+
+        <property
+            name="rangeName"
+            type="string"
+            update="true"
+            insert="true"
+            column="RANGE_NAME"
+            length="128"
+            not-null="true"/>
+
+		<set name="progDiscountRates"
+			 lazy="false"
+			 inverse="false"
+			 cascade="all-delete-orphan">
+			 	 <key column="DISC_UID"
+            		  not-null="true"/>
+			 	 <one-to-many
+			 	 	class="br.com.auster.tim.billcheckout.model.ProgressiveDiscountRates"/>
+		</set>
+
+   </class>
+
+</hibernate-mapping>

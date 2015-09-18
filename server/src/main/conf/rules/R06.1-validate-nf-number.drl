@@ -1,0 +1,90 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Receipt;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.common.lang.NamedHashMap;
+import br.com.auster.tim.billcheckout.util.NFNumberHelper;
+
+import br.com.auster.om.filter.request.BillcheckoutRequestWrapper;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+/**
+ * Valida se a numeração da NF está correta. O número de uma NF é contado até (porém excluindo-o) o 12o. caracter,
+ *   que necessariamente deve ser um hífen (-).
+ *
+ * Para ser um número válido, deve possuir o seguinte formato NNN.NNN.NNN, onde N é um valor decimal (0-9)
+ */
+rule "R06-1A - Validating NF Number"
+	salience 50
+	when
+		Account( $carrierCode : carrierCode )
+
+		BillcheckoutRequestWrapper ( $request : request -> ( ($request.getAttributes().get("mode.id") != null) && ("S2".equals($request.getAttributes().get("mode.id"))) )
+		                           )
+
+		$nf : Receipt( $invNumber : receiptNbr -> ( (!NFNumberHelper.validateNFNumber($invNumber)) )
+					 )
+	then
+		consequenceBuilder.setRule("R06-1","Erro numeração nota fiscal");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+ 		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("A numeração desta NF não é válida.");
+		c.addAttribute("Número NF", $nf.getReceiptNbr());
+		c.addNullAttribute("Primeiro CustCode");
+		results.add(c);
+end
+
+
+
+rule "R06-1B - Check NF number duplicity"
+	salience 50
+	when
+
+		BillcheckoutRequestWrapper ( $request : request -> ( ($request.getAttributes().get("mode.id") != null) && ("S2".equals($request.getAttributes().get("mode.id"))) )
+		                           )
+
+		Account( $carrierCode : carrierCode,
+				 $custcode : accountNumber
+			   )
+
+		$nf : Receipt( $carrierState : carrierState,
+					   $invNumber : receiptNbr
+					 )
+
+		eval ( NFNumberHelper.isNFNumberDuplicated($invNumber, $custcode, $carrierState, $request.getTransactionId()) )
+	then
+		consequenceBuilder.setRule("R06-1","Erro numeração nota fiscal");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("A numeração desta NF já foi encontrada nesta amostragem.");
+		c.addAttribute("Número NF", $nf.getReceiptNbr());
+		c.addAttribute("Primeiro CustCode", NFNumberHelper.getFistCustcode($invNumber, $carrierState, $request.getTransactionId()));
+
+		results.add(c);
+end

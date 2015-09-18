@@ -1,0 +1,372 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.tim.om.invoice.ContractInfoSection;;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+/**
+ * RULE # 1.7 Validação de Informações de Cobrança no Uso
+ */
+
+#Número Chamador
+rule "Regra 1-7A"
+	salience 0
+	when
+		TIMUsageDetail ( $callingNo : channelId == null ,
+						 $calledNo : calledNumber ,
+						 $date : usageDate ,
+						 $time : usageTime ,
+						 $amt : totalAmount ,
+						 $sectionName : sectionName
+					   )
+
+		Account($carrierCode : carrierCode)
+	then
+		consequenceBuilder.setRule("R01-7","Falta dados nos eventos de uso");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso sem número chamador.");
+
+        c.addAttribute("Número chamado", $calledNo);
+        c.addNullAttribute("Número chamador");
+        c.addAttribute("Valor do Uso", $amt);
+        c.addAttribute("Data do Uso", $date, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Hora do Uso", $time, ConsequenceAttributeList.AttributeType.TIME);
+        c.addAttribute("Nome da Seção", $sectionName);
+
+		results.add(c);
+end
+
+#Número Chamado
+rule "Regra 1-7B"
+	salience 0
+	when
+		TIMUsageDetail(	$callingNo : channelId ,
+						$calledNo : calledNumber == null,
+						$date : usageDate  ,
+						$time : usageTime ,
+						$amt : totalAmount,
+						$sectionName : sectionName
+					  )
+
+		Account($carrierCode : carrierCode)
+	then
+		consequenceBuilder.setRule("R01-7","Falta dados nos eventos de uso");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso sem número chamado.");
+
+        c.addNullAttribute("Número chamado");
+        c.addAttribute("Número chamador", $callingNo);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addAttribute("Data do Uso", $date, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Hora do Uso", $time, ConsequenceAttributeList.AttributeType.TIME);
+        c.addAttribute("Nome da Seção", $sectionName);
+
+		results.add(c);
+end
+
+#Data da Chamada
+rule "Regra 1-7C"
+	salience 0
+	when
+		TIMUsageDetail ( $callingNo : channelId  ,
+						 $calledNo : calledNumber ,
+						 $date : usageDate == null  ,
+						 $time : usageTime ,
+						 $amt : totalAmount ,
+			 			 $sectionName : sectionName
+					   )
+
+		Account($carrierCode : carrierCode)
+	then
+		consequenceBuilder.setRule("R01-7","Falta dados nos eventos de uso");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso sem data de realização.");
+
+        c.addAttribute("Número chamado", $calledNo);
+        c.addAttribute("Número chamador", $callingNo);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addNullAttribute("Data do Uso");
+        c.addAttribute("Hora do Uso", $time, ConsequenceAttributeList.AttributeType.TIME);
+        c.addAttribute("Nome da Seção", $sectionName);
+
+		results.add(c);
+end
+
+#Hora do Uso
+rule "Regra 1-7D"
+	salience 0
+	when
+		TIMUsageDetail ( $callingNo : channelId  ,
+						 $calledNo : calledNumber ,
+						 $date : usageDate  ,
+						 $time : usageTime == null,
+						 $amt : totalAmount ,
+						 $sectionName : sectionName
+					   )
+
+		Account($carrierCode : carrierCode)
+	then
+		consequenceBuilder.setRule("R01-7","Falta dados nos eventos de uso");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso sem horário de realização.");
+
+        c.addAttribute("Número chamado", $calledNo);
+        c.addAttribute("Número chamador", $callingNo);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addAttribute("Data do Uso", $date, ConsequenceAttributeList.AttributeType.DATE);
+        c.addNullAttribute("Hora do Uso");
+        c.addAttribute("Nome da Seção", $sectionName);
+
+		results.add(c);
+end
+
+#Destino da Chamada
+rule "Regra 1-7E"
+	salience 0
+	when
+		TIMUsageDetail ( $callingNo : channelId  ,
+						 $calledNo : calledNumber ,
+						 $date : usageDate  ,
+						 $time : usageTime ,
+						 $amt : totalAmount ,
+						 destinationCity == null,
+						 $sectionName: sectionName
+					   )
+
+		Account($carrierCode : carrierCode)
+	then
+		consequenceBuilder.setRule("R01-7","Falta dados nos eventos de uso");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso com destino inválido.");
+
+        c.addAttribute("Número chamado", $calledNo);
+        c.addAttribute("Número chamador", $callingNo);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addAttribute("Data do Uso", $date, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Hora do Uso", $time, ConsequenceAttributeList.AttributeType.TIME);
+        c.addAttribute("Nome da Seção", $sectionName);
+
+		results.add(c);
+end
+
+#Valor da Chamada
+rule "Regra 1-7F"
+	salience 0
+	when
+		TIMUsageDetail ( $callingNo : channelId  ,
+						 $calledNo : calledNumber ,
+						 $date : usageDate  ,
+						 $time : usageTime ,
+						 $amt : originalTotalAmount == null,
+						 $sectionName : sectionName
+					   )
+
+		Account($carrierCode : carrierCode)
+	then
+		consequenceBuilder.setRule("R01-7","Falta dados nos eventos de uso");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso com valor inválido.");
+
+        c.addAttribute("Número chamado", $calledNo);
+        c.addAttribute("Número chamador", $callingNo);
+        c.addNullAttribute("Valor do Uso");
+        c.addAttribute("Data do Uso", $date, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Hora do Uso", $time, ConsequenceAttributeList.AttributeType.TIME);
+        c.addAttribute("Nome da Seção", $sectionName);
+
+		results.add(c);
+end
+
+#Serviço da Chamada
+rule "Regra 1-7G"
+	salience 0
+	when
+		TIMUsageDetail ( $callingNo : channelId  ,
+						 $calledNo : calledNumber ,
+						 $date : usageDate  ,
+						 $time : usageTime ,
+						 $amt : totalAmount ,
+						 $svcID : svcId == null ,
+						 $sectionName : sectionName
+					   )
+
+		Account($carrierCode : carrierCode)
+	then
+		consequenceBuilder.setRule("R01-7","Falta dados nos eventos de uso");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso com serviço inválido.");
+
+        c.addAttribute("Número chamado", $calledNo);
+        c.addAttribute("Número chamador", $callingNo);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addAttribute("Data do Uso", $date, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Hora do Uso", $time, ConsequenceAttributeList.AttributeType.TIME);
+        c.addAttribute("Nome da Seção", $sectionName);
+
+		results.add(c);
+end
+
+#Tarifa da Chamada
+rule "Regra 1-7H"
+	salience 0
+	when
+		TIMUsageDetail ( $callingNo : channelId  ,
+						 $calledNo : calledNumber ,
+						 $date : usageDate  ,
+						 $time : usageTime ,
+						 $amt : totalAmount ,
+						 tariffClass == null,
+						 $sectionName : sectionName
+					   )
+
+		Account($carrierCode : carrierCode)
+	then
+		consequenceBuilder.setRule("R01-7","Falta dados nos eventos de uso");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso com classe tarifária inválida.");
+
+        c.addAttribute("Número chamado", $calledNo);
+        c.addAttribute("Número chamador", $callingNo);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addAttribute("Data do Uso", $date, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Hora do Uso", $time, ConsequenceAttributeList.AttributeType.TIME);
+        c.addAttribute("Nome da Seção", $sectionName);
+
+		results.add(c);
+end
+
+#Duração da Chamada
+rule "Regra 1-7I"
+	salience 0
+	when
+		TIMUsageDetail ( $dur : originalUsageDuration == null,
+						 voiceUsage == true,
+						 type != "AD", type != "DSL"	,
+						 $callingNo : channelId  ,
+						 $calledNo : calledNumber ,
+						 $date : usageDate  ,
+						 $time : usageTime ,
+						 $amt : totalAmount ,
+						 $sectionName : sectionName
+					   )
+
+		Account($carrierCode : carrierCode)
+	then
+		consequenceBuilder.setRule("R01-7","Falta dados nos eventos de uso");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso com duração inválida.");
+
+        c.addAttribute("Número chamado", $calledNo);
+        c.addAttribute("Número chamador", $callingNo);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addAttribute("Data do Uso", $date, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Hora do Uso", $time, ConsequenceAttributeList.AttributeType.TIME);
+        c.addAttribute("Nome da Seção", $sectionName);
+
+		results.add(c);
+end
+
+#Origem da Chamada
+rule "Regra 1-7J"
+	salience 0
+	when
+		TIMUsageDetail ( $callingNo : channelId  ,
+						 $calledNo : calledNumber ,
+						 $date : usageDate  ,
+						 $time : usageTime ,
+						 $amt : totalAmount ,
+						 originCity == null,
+						 $sectionName : sectionName
+					   )
+
+		Account($carrierCode : carrierCode)
+	then
+		consequenceBuilder.setRule("R01-7","Falta dados nos eventos de uso");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso com origem inválido.");
+
+        c.addAttribute("Número chamado", $calledNo);
+        c.addAttribute("Número chamador", $callingNo);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addAttribute("Data do Uso", $date, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Hora do Uso", $time, ConsequenceAttributeList.AttributeType.TIME);
+        c.addAttribute("Nome da Seção", $sectionName);
+
+		results.add(c);
+end

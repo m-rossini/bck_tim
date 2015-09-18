@@ -1,0 +1,464 @@
+#created on: 25/03/2008
+package br.com.auster.tim.billchekout
+
+#list any import classes here.
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.tim.billcheckout.param.PenaltyInterestLDNFVO;
+import br.com.auster.tim.billcheckout.param.PenaltyInterestLocalNFVO;
+import br.com.auster.common.lang.NamedDouble;
+import br.com.auster.common.text.DateFormat;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+import java.util.Date;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Receipt;
+import br.com.auster.tim.om.invoice.OCCGroupReceiptDetail;
+import br.com.auster.tim.om.invoice.TIMReceiptDetail;
+
+#declare any global variables here
+global br.com.auster.tim.billcheckout.param.PenaltyInterestLDNFCache penaltyInterestLDNFCache;
+global br.com.auster.tim.billcheckout.param.PenaltyInterestLocalNFCache penaltyInterestLocalNFCache;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+//init the variables to sum LD41/local interests and penalties
+rule "29.1-Init variables"
+	salience 90
+
+	when
+
+		Account ()
+
+	then
+
+		assert( new NamedDouble("R29.1_Interest", 0) );
+		assert( new NamedDouble("R29.1_Penalty", 0) );
+
+end
+
+
+/**
+ *  These first two rules will only check if the Penalty/Interest(Multa/Juros) charge is valid; i.e, this account
+ *    has any charges for such Carrier (local or LD) in the specified period
+ */
+
+rule "R29.1-Should Have Penalty - Local NF"
+	salience 70
+
+	when
+
+		$occ : OCCGroupReceiptDetail( $totalAmount : totalAmount,
+									  $payDate : payDate,
+									  $dueDate : dueDate,
+									  penalty == true,
+									  $desc : caption -> ($desc.startsWith("MULTAS"))
+									)
+
+		$occGroup : TIMReceiptDetail( receiptGroupItems contains $occ )
+
+		$nf : Receipt ( local == true,
+		                details contains $occGroup,
+		                $carrierCodeNF : carrierCode,
+		                $carrierNameNF : carrierName
+					  )
+
+		$acc : Account ( $carrierCode : carrierCode )
+
+	then
+
+		PenaltyInterestLocalNFVO penaltyInterestLocalNFVO = (PenaltyInterestLocalNFVO) penaltyInterestLocalNFCache.getFromCache(PenaltyInterestLocalNFVO.createAlternateKey($acc.getIdentity("customerID").getIdentityAttrib1(), $dueDate));
+
+		if (penaltyInterestLocalNFVO == null) {
+
+			consequenceBuilder.setRule("R29-1","Erro Faturamento Multas/Juros");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+			c.setDescription("Foi cobrado multa e juros sem existência de uso desta operadora na data de vencimento em questão.");
+			c.addAttribute("CSP da Operadora", $carrierCodeNF);
+			c.addAttribute("Nome da Operadora", $carrierNameNF);
+			c.addAttribute("Data de Vencimento", $dueDate);
+			c.addAttribute("Data de Pagamento", $payDate);
+			c.addNullAttribute("Valor Devido na NF");
+			c.addNullAttribute("Valor do Item");
+			c.addNullAttribute("Valor Calculado");
+			c.addNullAttribute("Arredondamento");
+
+			results.add(c);
+		}
+
+end
+
+
+rule "R29.1-Should Have Penalty - LD NF"
+	salience 70
+
+	when
+
+		$occ : OCCGroupReceiptDetail( $totalAmount : totalAmount,
+									  $dueDate : dueDate,
+									  $payDate : payDate,
+									  penalty == true
+									 )
+
+		$occGroup : TIMReceiptDetail( receiptGroupItems contains $occ )
+
+		$nf : Receipt ( $carrierCodeNF : carrierCode,
+						$carrierNameNF : carrierName,
+		                local == false,
+		                details contains $occGroup
+					  )
+
+		$acc : Account ( $carrierCode : carrierCode )
+
+	then
+
+		PenaltyInterestLDNFVO penaltyInterestLDNFVO = (PenaltyInterestLDNFVO) penaltyInterestLDNFCache.getFromCache(PenaltyInterestLDNFVO.createAlternateKey($acc.getIdentity("customerID").getIdentityAttrib1(), $dueDate, $carrierCodeNF));
+
+		if (penaltyInterestLDNFVO == null) {
+
+			consequenceBuilder.setRule("R29-1","Erro Faturamento Multas/Juros");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+			c.setDescription("Foi cobrado multa e juros sem existência de uso desta operadora na data de vencimento em questão.");
+			c.addAttribute("CSP da Operadora", $carrierCodeNF);
+			c.addAttribute("Nome da Operadora", $carrierNameNF);
+			c.addAttribute("Data de Vencimento", $dueDate);
+			c.addAttribute("Data de Pagamento", $payDate);
+			c.addNullAttribute("Valor Devido na NF");
+			c.addNullAttribute("Valor do Item");
+			c.addNullAttribute("Valor Calculado");
+			c.addNullAttribute("Arredondamento");
+			results.add(c);
+		}
+
+end
+
+
+/**
+ *  Now we will calculate the sum of LD 41 and local penalties/interests from the OCC
+ */
+
+rule "R29.1-Validating OCC - Calculate sum of penalties - LD41/local NF"
+	salience 80
+
+	when
+
+		$occ : OCCGroupReceiptDetail( $occDesc : caption,
+									  $totalAmount : totalAmount,
+									  $dueDate : dueDate,
+									  penalty == true
+									 )
+
+		$occGroup : TIMReceiptDetail( receiptGroupItems contains $occ )
+
+		$nf : Receipt ( local == true,
+		                details contains $occGroup
+					  )
+
+		$acc : Account ( $carrierCode : carrierCode )
+
+		$nd :  NamedDouble( name == "R29.1_Penalty" )
+
+	then
+
+		$nd.addTo($totalAmount.doubleValue());
+
+end
+
+
+rule "R29.1-Validating OCC - Calculate sum of interests - LD41/local NF"
+	salience 80
+
+	when
+
+		$occ : OCCGroupReceiptDetail( $occDesc : caption,
+									  $totalAmount : totalAmount,
+									  interest == true
+									 )
+
+		$occGroup : TIMReceiptDetail( receiptGroupItems contains $occ )
+
+		$nf : Receipt ( local == true,
+		                details contains $occGroup
+					  )
+
+		$acc : Account ( $carrierCode : carrierCode )
+
+		$nd :  NamedDouble( name == "R29.1_Interest" )
+
+	then
+
+		$nd.addTo($totalAmount.doubleValue());
+
+end
+
+
+/**
+ *  Now we will validate the penalty/interest charge for LD41/local NF
+ */
+
+rule "Validating OCC Penalty charge - LD41/local NF"
+	salience 70
+
+	when
+
+		$occ : OCCGroupReceiptDetail( $desc : caption -> ($desc.startsWith("MULTAS")),
+									  $dueDate : dueDate,
+									  $payDate : payDate,
+									  penalty == true
+									)
+
+		$occGroup : TIMReceiptDetail( receiptGroupItems contains $occ )
+
+		$nf : Receipt ( local == true,
+		                details contains $occGroup,
+		                $carrierCodeNF : carrierCode,
+		                $carrierNameNF : carrierName
+					  )
+
+		$acc : Account ( $carrierCode : carrierCode )
+
+		$nd :  NamedDouble( name == "R29.1_Penalty" )
+
+	then
+
+		PenaltyInterestLocalNFVO penaltyInterestLocalNFVO = (PenaltyInterestLocalNFVO) penaltyInterestLocalNFCache.getFromCache(PenaltyInterestLocalNFVO.createAlternateKey($acc.getIdentity("customerID").getIdentityAttrib1(), $dueDate));
+
+		if (penaltyInterestLocalNFVO != null) {
+
+			double calculatedValue = (int)((penaltyInterestLocalNFVO.getInvoiceValue() * 0.02)*100);
+			double ndValue = ((int)($nd.getValue()*100));
+
+			if (Math.abs(calculatedValue - ndValue) > 1)  {
+
+				consequenceBuilder.setRule("R29-1","Erro Faturamento Multas/Juros");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+				c.setDescription("Cobrança de multa com valor incorreto.");
+				c.addAttribute("CSP da Operadora", $carrierCodeNF);
+				c.addAttribute("Nome da Operadora", $carrierNameNF);
+				c.addAttribute("Data de Vencimento", $dueDate);
+				c.addAttribute("Data de Pagamento", $payDate);
+				c.addDoubleAttribute("Valor Devido na NF", penaltyInterestLocalNFVO.getInvoiceValue());
+				c.addDoubleAttribute("Valor do Item", ndValue/100);
+				c.addDoubleAttribute("Valor Calculado", calculatedValue/100);
+
+				results.add(c);
+			}
+
+		}
+
+end
+
+
+rule "Validating OCC Interest charge - LD41/local NF"
+	salience 70
+
+	when
+
+		$occ : OCCGroupReceiptDetail( $desc : caption -> ($desc.startsWith("JUROS")),
+									  $dueDate : dueDate,
+									  $payDate : payDate,
+									  interest == true
+								    )
+
+		$occGroup : TIMReceiptDetail( receiptGroupItems contains $occ )
+
+		$nf : Receipt (	$carrierCodeNF : carrierCode,
+						$carrierNameNF : carrierName,
+		                local == true,
+		                details contains $occGroup
+					  )
+
+		$acc : Account ( $carrierCode : carrierCode)
+
+		$nd :  NamedDouble( name == "R29.1_Interest" )
+
+	then
+
+		PenaltyInterestLocalNFVO penaltyInterestLocalNFVO = (PenaltyInterestLocalNFVO) penaltyInterestLocalNFCache.getFromCache(PenaltyInterestLocalNFVO.createAlternateKey($acc.getIdentity("customerID").getIdentityAttrib1(), $dueDate));
+
+		if (penaltyInterestLocalNFVO != null) {
+
+			// the range of days does not include the payment day
+			double rangeDays = (double)DateFormat.difference($dueDate, "dd/MM/yy", $payDate, "dd/MM/yy", 'd') - 1;
+			double calculatedValue = (int)((penaltyInterestLocalNFVO.getInvoiceValue() * (((rangeDays)/30) * 0.01))*100);
+			double ndValue = ((int)($nd.getValue()*100));
+			if (Math.abs(calculatedValue - ndValue) > 1) {
+
+				consequenceBuilder.setRule("R29-1","Erro Faturamento Multas/Juros");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+				c.setDescription("Cobrança de juros com valor incorreto.");
+				c.addAttribute("CSP da Operadora", $carrierCodeNF);
+				c.addAttribute("Nome da Operadora", $carrierNameNF);
+				c.addAttribute("Data de Vencimento", $dueDate);
+				c.addAttribute("Data de Pagamento", $payDate);
+				c.addDoubleAttribute("Valor Devido na NF", penaltyInterestLocalNFVO.getInvoiceValue());
+				c.addDoubleAttribute("Valor do Item", ndValue/100);
+				c.addDoubleAttribute("Valor Calculado", calculatedValue/100);
+
+				results.add(c);
+			}
+
+		}
+
+end
+
+
+/**
+ *  Now we will validate the penalty/interest charge for LD NF
+ */
+
+rule "Validating OCC Penalty charge - LD NF"
+	salience 70
+
+	when
+
+		$occ : OCCGroupReceiptDetail( $occTotalAmount : totalAmount,
+									  $dueDate : dueDate,
+									  $payDate : payDate,
+									  penalty == true
+									)
+
+		$occGroup : TIMReceiptDetail( receiptGroupItems contains $occ )
+
+		$nf : Receipt ( $carrierCodeNF : carrierCode,
+						$carrierNameNF : carrierName,
+		                local == false,
+		                details contains $occGroup
+					  )
+
+		$acc : Account ( $carrierCode : carrierCode )
+
+	then
+
+		PenaltyInterestLDNFVO penaltyInterestLDNFVO = (PenaltyInterestLDNFVO) penaltyInterestLDNFCache.getFromCache(PenaltyInterestLDNFVO.createAlternateKey($acc.getIdentity("customerID").getIdentityAttrib1(), $dueDate, $carrierCodeNF));
+
+		if (penaltyInterestLDNFVO != null) {
+
+			double calculatedValue = (int)((penaltyInterestLDNFVO.getInvoiceValue() * 0.02)*100);
+			double ndValue = ((int)($occTotalAmount.doubleValue()*100));
+
+			if (Math.abs(calculatedValue - ndValue) > 1)  {
+
+				consequenceBuilder.setRule("R29-1","Erro Faturamento Multas/Juros");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+				c.setDescription("Cobrança de multa com valor incorreto.");
+				c.addAttribute("CSP da Operadora", $carrierCodeNF);
+				c.addAttribute("Nome da Operadora", $carrierNameNF);
+				c.addAttribute("Data de Vencimento", $dueDate);
+				c.addAttribute("Data de Pagamento", $payDate);
+				c.addDoubleAttribute("Valor Devido na NF", penaltyInterestLDNFVO.getInvoiceValue());
+				c.addDoubleAttribute("Valor do Item", ndValue/100);
+				c.addDoubleAttribute("Valor Calculado", calculatedValue/100);
+
+				results.add(c);
+			}
+
+		}
+
+end
+
+
+rule "Validating OCC Interest charge - LD NF"
+	salience 70
+
+	when
+
+		$occ : OCCGroupReceiptDetail( $occTotalAmount : totalAmount,
+									  $dueDate : dueDate,
+									  $payDate : payDate,
+									  interest == true
+									)
+
+		$occGroup : TIMReceiptDetail( receiptGroupItems contains $occ )
+
+		$nf : Receipt ( $carrierCodeNF : carrierCode,
+						$carrierNameNF : carrierName,
+		                local == false,
+		                details contains $occGroup
+					  )
+
+		$acc : Account ( $carrierCode : carrierCode )
+
+	then
+
+		PenaltyInterestLDNFVO penaltyInterestLDNFVO = (PenaltyInterestLDNFVO) penaltyInterestLDNFCache.getFromCache(PenaltyInterestLDNFVO.createAlternateKey($acc.getIdentity("customerID").getIdentityAttrib1(), $dueDate, $carrierCodeNF));
+
+		if (penaltyInterestLDNFVO != null) {
+
+			// the range of days does not include the payment day
+			double rangeDays = (double)DateFormat.difference($dueDate, "dd/MM/yy", $payDate, "dd/MM/yy", 'd') - 1;
+
+			double calculatedValue = (int)((penaltyInterestLDNFVO.getInvoiceValue() * ((rangeDays/30) * 0.01))*100);
+			double ndValue = ((int)($occTotalAmount.doubleValue()*100));
+
+			if (Math.abs(calculatedValue - ndValue) > 1) {
+
+				consequenceBuilder.setRule("R29-1","Erro Faturamento Multas/Juros");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+				c.setDescription("Cobrança de juros com valor incorreto.");
+				c.addAttribute("CSP da Operadora", $carrierCodeNF);
+				c.addAttribute("Nome da Operadora", $carrierNameNF);
+				c.addAttribute("Data de Vencimento", $dueDate);
+				c.addAttribute("Data de Pagamento", $payDate);
+				c.addDoubleAttribute("Valor Devido na NF", penaltyInterestLDNFVO.getInvoiceValue());
+				c.addDoubleAttribute("Valor do Item", ndValue/100);
+				c.addDoubleAttribute("Valor Calculado", calculatedValue/100);
+
+				results.add(c);
+			}
+
+		}
+
+end

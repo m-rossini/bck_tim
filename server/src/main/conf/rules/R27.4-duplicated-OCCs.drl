@@ -1,0 +1,112 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.common.lang.NamedHashMap;
+import java.util.Iterator;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+function String getOCCDescription(String _description) {
+   if (_description == null) {
+      return "[OCC sem descrição]";
+   }
+   return _description;
+}
+
+
+/**
+ * First, we build a map to help counting all occurences of OCC
+ */
+rule "Regra R27.4 - step 1"
+	salience 90
+	when
+		Account()
+		not ( NamedHashMap( name == "occs") )
+	then
+		assert( new NamedHashMap("occs") );
+end
+
+
+/**
+ * Second, we count them
+ */
+rule "Regra R27.4 - step 2"
+	salience 70
+	when
+		$occ : GroupItemReceiptDetail( OCC == true,
+									   $eventCount : eventCount
+							   		  )
+
+		$occMap : NamedHashMap ( name == "occs" )
+	then
+		String occDesc = getOCCDescription( $occ.getCaption() );
+		// the key will be: OCC desc + OCC gross amount
+		String occFullDesc = occDesc + "|" + String.valueOf($occ.getTotalAmount());
+		GlobalForLog.log("DEBUG", "Built key" + occFullDesc);
+		if (! $occMap.containsKey(occFullDesc)) {
+			$occMap.put(occFullDesc, new Integer($eventCount.intValue()));
+		} else {
+			Integer intValue = (Integer) $occMap.get(occFullDesc);
+			$occMap.put(occFullDesc, new Integer(intValue.intValue() + $eventCount.intValue()) );
+		}
+		GlobalForLog.log("DEBUG", "Value for " + occFullDesc + " is now " + $occMap.get(occFullDesc));
+end
+
+/**
+ * And finally, we check which OCCs (by description) were found more than once
+ */
+rule "Regra R27.4 - step 3"
+	salience 40
+	when
+		Account( $carrierCode : carrierCode )
+
+		$occMap : NamedHashMap ( name == "occs" )
+	then
+		Iterator it = $occMap.keySet().iterator();
+		while (it.hasNext()) {
+			// KEY is <OCC_DESC>|<OCC_AMOUNT>|
+			String key = (String) it.next();
+
+			//get the OCC desc and user limit
+			String occDesc = key.substring(0, key.indexOf("|"));
+			//get the OCC amount
+			String occAmount = key.substring(key.indexOf("|") + 1);
+
+			Integer intValue = (Integer) $occMap.get(key);
+			if (intValue.intValue() > 1) {
+				// build consequence
+				consequenceBuilder.setRule("R27-4","Duplicidade de OCC");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+				c.setDescription("Mais de uma ocorrência desta OCC foi encontrada na mesma fatura.");
+				c.addAttribute("Descrição OCC", occDesc);
+				c.addAttribute("Valor OCC", new Double(occAmount));
+				c.addLongAttribute("Número de Ocorrências", intValue.intValue());
+				results.add(c);
+			}
+		}
+end
+
+

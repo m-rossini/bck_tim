@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<project name="packaging" default="undo" basedir="@[user.dir]@">
+
+	<target name="undo">
+		<!-- preparing RMI stub -->
+		<jar destfile="target/@[tim:tim-billcheckout-plugins]@" update="true">
+			<!-- including message objects used to communicate through JMS queues -->
+
+            <zipfileset src="@[auster:dware-console-plugins]@">
+                                <include name="br/com/auster/**/RequestCreation.class"/>
+                                <include name="br/com/auster/**/RequestFinished.class"/>
+                                <include name="br/com/auster/**/BillcheckoutReportRequest.class"/>
+            </zipfileset>
+           <zipfileset src="@[auster:dware-console-actions]@"
+                       includes="br/com/auster/dware/console/request/queue/*.class"/>
+            <zipfileset src="@[auster:data-aware-stubs]@"/>
+            <zipfileset src="@[auster:minerva-interfaces]@"/>
+            <zipfileset src="@[auster:request-base]@"
+                        includes="br/com/auster/**/model/**.class"/>
+            <zipfileset src="@[auster:web-request]@"
+                        includes="br/com/auster/**/model/**.class"/>
+            <zipfileset src="@[auster:security]@"
+                        includes="br/com/auster/**/*VO.class"/>
+            <zipfileset src="@[auster:backported-billcheckout]@"
+                        includes="**/*.*"/>
+            <zipfileset src="@[tim:tim-billcheckout-shared]@"
+                        includes="**/*.*"/>
+		</jar>
+	</target>
+</project>

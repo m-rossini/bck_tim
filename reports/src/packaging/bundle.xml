@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<project name="TIM Server Packaging" basedir="@[user.dir]@" default="build-distribution">
+
+    <property environment="env"/>
+	<property   name="bundle.workdir"
+				value="@[user.dir]@/target/bundling"/>
+	<property   name="bundle.filename.prod"
+				value="@[project.currentArtifact]@-@[project.currentVersion]@.PROD.zip"/>
+		<property   name="bundle.filename.ivt"
+					value="@[project.currentArtifact]@-@[project.currentVersion]@.IVT.zip"/>
+	<property   name="bundle.filename.desenv"
+				value="@[project.currentArtifact]@-@[project.currentVersion]@.DESENV.zip"/>
+	<property   name="source.dir"
+				value="@[user.dir]@/src/main"/>
+
+	<target name="prepare-workdir">
+		<delete dir="${bundle.workdir}"/>
+		<mkdir dir="${bundle.workdir}"/>
+		<mkdir dir="${bundle.workdir}/logs"/>
+	</target>
+
+
+	<target name="override-jms-object">
+        <jar destfile="target/@[tim:tim-billcheckout-report]@"
+			 update="true">
+           <zipfileset src="@[auster:dware-console-plugins]@"
+                       includes="br/com/auster/**/report/*.class"/>
+           <zipfileset src="@[auster:minerva-interfaces]@"
+                       includes="br/com/auster/**/*.class"/>
+           <zipfileset src="@[auster:dware-console-actions]@"
+                       includes="br/com/auster/dware/console/request/queue/*.class"/>
+	   <zipfileset src="@[auster:minerva-billcheckout]@"
+	               includes="br/com/auster/minerva/billcheckout/report/BillcheckoutRequest.class"/>
+           <zipfileset dir="${source.dir}/conf"
+                       includes="key.bin"/>
+        </jar>
+	</target>
+
+    <target name="build-distribution-prod" depends="prepare-workdir,override-jms-object">
+
+		<zip destfile="${bundle.workdir}/${bundle.filename.prod}" duplicate="preserve">
+			<zipfileset dir="${source.dir}/bin"     prefix="bin"/>
+			<zipfileset dir="${source.dir}/conf/prod"    prefix="conf"/>
+			<zipfileset dir="${source.dir}/conf"    prefix="conf"
+				        excludes="key.bin,prod/**,ivt/**"/>
+			<zipfileset dir="${source.dir}/etc"    prefix="etc"/>
+			<zipfileset dir="${bundle.workdir}/logs" prefix="logs"/>
+			<!-- dependent lib.s -->
+			<zipfileset file="@[log4j:log4j]@" prefix="lib"/>
+			<zipfileset file="@[commons-cli:commons-cli]@" prefix="lib"/>
+			<zipfileset file="@[commons-collections:commons-collections]@" prefix="lib"/>
+			<zipfileset file="@[commons-dbcp:commons-dbcp]@" prefix="lib"/>
+			<zipfileset file="@[commons-pool:commons-pool]@" prefix="lib"/>
+			<zipfileset file="@[commons-lang:commons-lang]@" prefix="lib"/>
+			<zipfileset file="@[commons-io:commons-io]@" prefix="lib"/>
+			<zipfileset file="@[commons-logging:commons-logging]@" prefix="lib"/>
+			<zipfileset file="@[commons-jxpath:commons-jxpath]@" prefix="lib"/>
+			<zipfileset file="@[bea:weblogic]@" prefix="lib"/>
+			<zipfileset file="@[minaret:datedFileAppender]@" prefix="lib"/>
+			<zipfileset file="@[trove:trove]@" prefix="lib"/>
+			<zipfileset file="@[oracle:oracle-jdbc4]@" prefix="lib"/>
+			<!-- endorsed libs. -->
+			<zipfileset file="@[xalan:xalan]@" prefix="lib/endorsed"/>
+			<!-- this project jar -->
+			<zipfileset file="target/@[tim:tim-billcheckout-report]@" prefix="lib"/>
+		</zip>
+	</target>
+
+    <target name="build-distribution-ivt" depends="build-distribution-prod">
+
+		<zip destfile="${bundle.workdir}/${bundle.filename.ivt}" duplicate="preserve">
+			<zipfileset dir="${source.dir}/bin"     prefix="bin"/>
+			<zipfileset dir="${source.dir}/conf/ivt"    prefix="conf"/>
+			<zipfileset dir="${source.dir}/conf"    prefix="conf"
+				        excludes="key.bin,prod/**,ivt/**"/>
+			<zipfileset dir="${source.dir}/etc"    prefix="etc"/>
+			<zipfileset dir="${bundle.workdir}/logs" prefix="logs"/>
+			<!-- dependent lib.s -->
+			<zipfileset file="@[log4j:log4j]@" prefix="lib"/>
+			<zipfileset file="@[commons-cli:commons-cli]@" prefix="lib"/>
+			<zipfileset file="@[commons-collections:commons-collections]@" prefix="lib"/>
+			<zipfileset file="@[commons-dbcp:commons-dbcp]@" prefix="lib"/>
+			<zipfileset file="@[commons-pool:commons-pool]@" prefix="lib"/>
+			<zipfileset file="@[commons-lang:commons-lang]@" prefix="lib"/>
+			<zipfileset file="@[commons-io:commons-io]@" prefix="lib"/>
+			<zipfileset file="@[commons-logging:commons-logging]@" prefix="lib"/>
+			<zipfileset file="@[commons-jxpath:commons-jxpath]@" prefix="lib"/>
+			<zipfileset file="@[bea:weblogic]@" prefix="lib"/>
+			<zipfileset file="@[minaret:datedFileAppender]@" prefix="lib"/>
+			<zipfileset file="@[trove:trove]@" prefix="lib"/>
+			<zipfileset file="@[oracle:oracle-jdbc4]@" prefix="lib"/>
+			<!-- endorsed libs. -->
+			<zipfileset file="@[xalan:xalan]@" prefix="lib/endorsed"/>
+			<!-- this project jar -->
+			<zipfileset file="target/@[tim:tim-billcheckout-report]@" prefix="lib"/>
+		</zip>
+	</target>
+
+    <target name="build-distribution" depends="build-distribution-ivt">
+
+		<zip destfile="${bundle.workdir}/${bundle.filename.desenv}" duplicate="preserve">
+			<zipfileset dir="${source.dir}/bin"     prefix="bin"/>
+			<zipfileset dir="${source.dir}/conf"    prefix="conf"
+				        excludes="key.bin,prod/**,ivt/**"/>
+			<zipfileset dir="${source.dir}/etc"    prefix="etc"/>
+			<zipfileset dir="${bundle.workdir}/logs" prefix="logs"/>
+			<!-- dependent lib.s -->
+			<zipfileset file="@[log4j:log4j]@" prefix="lib"/>
+			<zipfileset file="@[commons-cli:commons-cli]@" prefix="lib"/>
+			<zipfileset file="@[commons-collections:commons-collections]@" prefix="lib"/>
+			<zipfileset file="@[commons-dbcp:commons-dbcp]@" prefix="lib"/>
+			<zipfileset file="@[commons-pool:commons-pool]@" prefix="lib"/>
+			<zipfileset file="@[commons-lang:commons-lang]@" prefix="lib"/>
+			<zipfileset file="@[commons-io:commons-io]@" prefix="lib"/>
+			<zipfileset file="@[commons-logging:commons-logging]@" prefix="lib"/>
+			<zipfileset file="@[commons-jxpath:commons-jxpath]@" prefix="lib"/>
+			<zipfileset file="@[bea:weblogic]@" prefix="lib"/>
+			<zipfileset file="@[minaret:datedFileAppender]@" prefix="lib"/>
+			<zipfileset file="@[trove:trove]@" prefix="lib"/>
+			<zipfileset file="@[oracle:oracle-jdbc4]@" prefix="lib"/>
+			<!-- endorsed libs. -->
+			<zipfileset file="@[xalan:xalan]@" prefix="lib/endorsed"/>
+			<!-- this project jar -->
+			<zipfileset file="target/@[tim:tim-billcheckout-report]@" prefix="lib"/>
+		</zip>
+	</target>
+
+</project>
+

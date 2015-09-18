@@ -1,0 +1,193 @@
+<?xml version = "1.0" encoding = "UTF-8"?>
+<root>
+	<sql:configuration xmlns:sql="http://www.auster.com.br/common/sql/">
+
+		<sql:statements>
+			<sql:statement name="RatesGuidingCache.select">
+				<sql:query>
+					SELECT a.TARIFF_ZONE_UID, a.PLANS_UID, a.SERVICES_UID, a.RATE_TIME_ZONE_UID,
+       					   a.INCOMING_FLAG, a.INIT_VOLUME, a.END_VOLUME, a.STEP_VOLUME,
+       					   a.STEP_COST, a.EFFECTIVE_DATE, a.CUSTOM_1, a.CUSTOM_2, a.CUSTOM_3,       					  
+      					   b.SHORT_DESC as SHDES_TARIFF_ZONE, c.PLAN_NAME, c.STATE, 
+      					   d.SHORT_DESC as SHDES_SERVICE, e.BILL_FILE_CODE
+					FROM USAGE_RATES a
+      					JOIN QLF_TARIFF_ZONE b ON a.TARIFF_ZONE_UID = b.OBJID
+      					JOIN QLF_PLANS c ON a.PLANS_UID = c.OBJID
+      					JOIN QLF_SERVICES d ON a.SERVICES_UID = d.OBJID
+		      			JOIN QLF_RATE_TIME_ZONE e ON a.RATE_TIME_ZONE_UID = e.OBJID
+					WHERE b.SHORT_DESC = ? 			<!-- zona tarifaria  -->
+	      				and c.PLAN_NAME = ? 		<!-- plano do cliente  -->
+      					and d.SHORT_DESC = ? 		<!-- cod. serviço  -->
+		      			and c.STATE = ? 			<!-- estado  -->
+      					and e.BILL_FILE_CODE = ? 	<!-- modulação  -->
+      					and a.INCOMING_FLAG = ?  	<!-- orientaçao  -->
+      				ORDER BY a.EFFECTIVE_DATE, a.INIT_VOLUME
+				</sql:query>
+			</sql:statement>		
+
+			<sql:statement name="MicrocellRatesCache.select">
+				<sql:query>
+					SELECT b.PLAN_NAME, b.STATE, a.SHORT_DESC, a.DESCRIPTION, a.PLAN_UID, 
+					 	a.EFFECTIVE_DATE, a.PRICE_VALUE, a.SCALEFACTOR, a.UMCODE
+					FROM MICROCELL_RATES a
+						JOIN QLF_PLANS b ON a.PLAN_UID = b.OBJID
+					WHERE a.SHORT_DESC = ?
+						AND b.PLAN_NAME = ?
+						AND b.STATE = ?
+				</sql:query>
+			</sql:statement>		
+
+			<sql:statement name="ServiceRatesCache.select">
+				<sql:query>
+					SELECT b.PLAN_NAME, b.STATE, c.SHORT_DESC, c.DESCRIPTION, a.PLAN_UID, a.SERVICE_UID,
+					 	a.EFFECTIVE_DATE, a.ACCESS_FEE, a.ONETIME_RATE, a.SUBSCRIPTION_RATE
+					FROM SERVICE_RATES a
+						JOIN QLF_PLANS b ON a.PLAN_UID = b.OBJID
+						JOIN QLF_SERVICES c ON a.SERVICE_UID = c.OBJID
+					WHERE c.SHORT_DESC = ?
+						AND b.PLAN_NAME = ?
+						AND b.STATE = ?
+					ORDER BY a.EFFECTIVE_DATE
+				</sql:query>
+			</sql:statement>		
+
+			<sql:statement name="ServiceRatesCache.alternate">
+				<sql:query>
+					SELECT  PLAN_NAME, STATE, MAX(SHORT_DESC), DESCRIPTION, PLAN_UID, MAX(SERVICE_UID),
+						 	EFFECTIVE_DATE, MAX(ACCESS_FEE), MAX(ONETIME_RATE), MAX(SUBSCRIPTION_RATE)
+					FROM (
+						SELECT b.PLAN_NAME, b.STATE, c.SHORT_DESC, c.DESCRIPTION, a.PLAN_UID, a.SERVICE_UID,
+						 	a.EFFECTIVE_DATE, a.ACCESS_FEE, a.ONETIME_RATE, a.SUBSCRIPTION_RATE
+						FROM SERVICE_RATES a
+							JOIN QLF_PLANS b ON a.PLAN_UID = b.OBJID
+							JOIN QLF_SERVICES c ON a.SERVICE_UID = c.OBJID
+						WHERE c.DESCRIPTION = ?
+							AND b.PLAN_NAME = ?
+							AND b.STATE = ?
+						UNION
+						SELECT b.PLAN_NAME, b.STATE, c.SHORT_DESC, c.DESCRIPTION, a.PLAN_UID, a.PACKAGE_UID,
+						   a.EFFECTIVE_DATE, a.ACCESS_FEE, 0, a.SUBSCRIPTION_RATE
+						FROM PACKAGE_RATES a
+							JOIN QLF_PLANS b ON a.PLAN_UID = b.OBJID
+							JOIN QLF_PACKAGE c ON a.PACKAGE_UID = c.OBJID
+						WHERE c.DESCRIPTION = ?
+							AND b.PLAN_NAME = ?
+							AND b.STATE = ?
+						) 
+						GROUP BY PLAN_NAME, STATE, DESCRIPTION, PLAN_UID, EFFECTIVE_DATE
+						ORDER BY EFFECTIVE_DATE
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="PricePlanRatesCache.select">
+				<sql:query>
+					SELECT b.plan_name, b.state, c.short_desc as SHDES_SERVICE,
+						   d.short_desc as SHDES_TARIFF_ZONE, e.description as DESCR_PACKAGE,
+						   a.plan_uid, a.package_uid, a.service_uid, a.tariff_zone_uid, a.effective_date,
+	       				   a.end_range_1, a.amt_range_1, a.end_range_2, a.amt_range_2,
+	       				   a.end_range_3, a.amt_range_3, a.end_range_4, a.amt_range_4,
+	       				   a.end_range_5, a.amt_range_5, a.amt_range_max, a.umcode
+					FROM   
+					       priceplan_rates a
+					       JOIN qlf_plans b ON a.plan_uid = b.objid
+					       JOIN qlf_services c ON a.service_uid = c.objid
+					       JOIN qlf_tariff_zone d ON a.tariff_zone_uid = d.objid
+					       JOIN qlf_package e ON a.package_uid = e.objid
+					WHERE  
+					       b.plan_name = ?  		 <!-- plano   	     -->
+					       AND b.state = ?  		 <!-- estado  		 -->
+					       AND c.short_desc = ?  	 <!-- serviço 		 -->
+					       AND d.short_desc = ?		 <!-- zona tarifária -->
+					       AND e.description = ? 	 <!-- pacote         -->
+					ORDER BY a.effective_date
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="PricePlanRatesCache.alternateSelect">
+				<sql:query>
+					SELECT b.plan_name, b.state, c.short_desc as SHDES_SERVICE,
+						   d.short_desc as SHDES_TARIFF_ZONE, a.package_uid as DESCR_PACKAGE,
+						   a.plan_uid, a.package_uid, a.service_uid, a.tariff_zone_uid, a.effective_date,
+	       				   a.end_range_1, a.amt_range_1, a.end_range_2, a.amt_range_2,
+	       				   a.end_range_3, a.amt_range_3, a.end_range_4, a.amt_range_4,
+	       				   a.end_range_5, a.amt_range_5, a.amt_range_max, a.umcode
+					FROM   
+					       priceplan_rates a
+					       JOIN qlf_plans b ON a.plan_uid = b.objid
+					       JOIN qlf_services c ON a.service_uid = c.objid
+					       JOIN qlf_tariff_zone d ON a.tariff_zone_uid = d.objid
+					WHERE  
+					       b.plan_name = ?  		 <!-- plano   	     -->
+					       AND b.state = ?  		 <!-- estado  		 -->
+					       AND c.short_desc = ?  	 <!-- serviço 		 -->
+					       AND d.short_desc = ?		 <!-- zona tarifária -->
+					       AND a.package_uid is null <!-- pacote         -->
+					ORDER BY a.effective_date
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="MegaTIMCache.select">
+				<sql:query>
+					SELECT b.SVC_CODE, a.ONNET_ONLY, a.VALID_PERIOD, a.NEW_CUSTOMER_FEE, a.YET_CUSTOMER_FEE,
+					       a.INVOICE_DESCRIPTION, c.GEO_STATE, b.DESCRIPTION, e.SHORT_DESC, d.PROMO_QTTY
+					FROM   MEGATIM_PARAMS a 
+					       JOIN QLF_SERVICES b ON a.ACTIVATION_UID = b.OBJID
+						   JOIN BCK_GEO_DM c ON a.GEO_UID = c.OBJID
+						   JOIN MEGATIM_SERVICES d ON a.OBJID = d.MEGATIM_UID
+					       JOIN QLF_SERVICES e ON d.SERVICE_UID = e.OBJID
+					WHERE  c.GEO_STATE = ? 	
+					       AND a.INVOICE_DESCRIPTION  = ?
+				</sql:query>
+			</sql:statement>		
+
+
+			<sql:statement name="CrashProgramRatesCache.select">
+				<sql:query>
+					SELECT COST_ID, CSGCODE, INIT_VOLUME, END_VOLUME, PPM
+					FROM   CRASH_PROGRAM2
+					WHERE  COST_ID = ?
+	       				   AND CSGCODE = ?
+	 			</sql:query>
+			</sql:statement>
+
+			<sql:statement name="MicrocellMappingCache.select">
+				<sql:query>
+					SELECT 	a.SHDES_MC, a.SHDES_ZONA_MC
+					FROM 	ACC_RC_ZONA_MICROCELULA a 
+					WHERE 	a.SHDES_ZONA_MC = ?
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="NPackRateCache.select">
+				<sql:query>
+					SELECT 	pl.PLAN_NAME, pl.STATE, nr.EFFECTIVE_DATE, nr.INIT_RANGE, nr.END_RANGE, nr.AMOUNT
+					FROM 	NPACK_RATES nr
+					        JOIN QLF_PLANS pl ON pl.OBJID = nr.PLAN_UID
+					WHERE 	pl.PLAN_NAME = ?
+					        AND pl.STATE = ?
+					        AND nr.EFFECTIVE_DATE =
+					            ( SELECT MAX(a.EFFECTIVE_DATE) 
+					              FROM   NPACK_RATES a
+					              WHERE  a.EFFECTIVE_DATE &lt; ?
+					                     AND a.PLAN_UID = nr.PLAN_UID ) 
+				    ORDER BY
+				            nr.INIT_RANGE
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="MyDreamRatesCache.select">
+				<sql:query>
+					SELECT 	b.SHORT_DESC, a.STATE, a.PACKAGE_NAME, a.PPM
+					FROM    MEUSONHO_RATES a
+					        JOIN QLF_TARIFF_ZONE b ON a.TARIFF_ZONE_UID = b.OBJID
+					WHERE   b.SHORT_DESC = ?
+					        AND a.STATE = ?
+					        AND a.PACKAGE_NAME = ?
+				</sql:query>
+			</sql:statement>
+
+		</sql:statements>
+
+	</sql:configuration>
+
+</root>

@@ -1,0 +1,279 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.common.rules.GlobalForLog;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.common.lang.NamedHashMap;
+import br.com.auster.common.lang.NamedDouble;
+
+import java.util.List;
+import br.com.auster.tim.billcheckout.tariff.RatesGuidingVO;
+import br.com.auster.tim.billcheckout.tariff.CachedRatesGuidingVO;
+import br.com.auster.billcheckout.caches.CacheableKey;
+import java.util.ArrayList;
+
+global br.com.auster.tim.billcheckout.util.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+global br.com.auster.tim.billcheckout.tariff.RatesGuidingCache ratingsCache;
+
+
+rule "Init"
+	salience 90
+	when
+		not ( NamedDouble ( name == "freeunit" ) )
+	then
+		assert(new NamedDouble("freeunit"));
+		assert(new NamedDouble("discounted"));
+		assert(new NamedDouble("zeroed"));
+		assert(new NamedDouble("totals"));
+		assert(new NamedDouble("tariffed"));
+		assert(new NamedDouble("LDed"));
+end
+
+
+rule "All Usage"
+	salience 50
+	when
+		$usage : TIMUsageDetail ( )
+
+		$counter : NamedDouble ( name == "totals" )
+	then
+		$counter.setValue($counter.getValue() + 1);
+end
+
+/**
+	key=51110000, name=fuIndicator, index 18.
+	Sendo do tipo F, é freeUnits total. Sendo tipo P, ele é parcial(Parte Free,
+	e parte Fora do pacote(cobrado)).
+**/
+rule "FreeUnit calls"
+	salience 50
+	when
+		$usage : TIMUsageDetail ( freeUnitIndicator != "N" )
+
+		$counter : NamedDouble ( name == "freeunit" )
+	then
+		$counter.setValue($counter.getValue() + 1);
+end
+
+rule "Discounted"
+	salience 50
+	when
+		$usage : TIMUsageDetail ( freeUnitIndicator == "N",
+		                          discountAmount > 0.001 )
+
+		$counter : NamedDouble ( name == "discounted" )
+	then
+		$counter.setValue($counter.getValue() + 1);
+end
+
+
+rule "Zeroed"
+	salience 50
+	when
+		$usage : TIMUsageDetail ( freeUnitIndicator == "N",
+		                          discountAmount < 0.001,
+		                          totalAmount < 0.001 )
+
+		$counter : NamedDouble ( name == "zeroed" )
+	then
+		$counter.setValue($counter.getValue() + 1);
+end
+
+rule "LDed"
+	salience 50
+	when
+		$usage : TIMUsageDetail ( freeUnitIndicator == "N",
+		                          discountAmount < 0.001,
+		                          totalAmount > 0.001,
+		                          $cspBGH : carrierCode -> ((!"41".equals($cspBGH)) && (!"0".equals($cspBGH)))
+		                        )
+
+		$counter : NamedDouble ( name == "LDed" )
+	then
+		$counter.setValue($counter.getValue() + 1);
+end
+
+function String verifyCallType(String type){
+	//chamadas recebidas, conforme EFT R01.1.
+	if("AD".equalsIgnoreCase(type) || "AC".equalsIgnoreCase(type) || 
+	   "DSL".equalsIgnoreCase(type)|| "VCR".equalsIgnoreCase(type)){
+		return "Y";
+	}
+	//chamadas originadas
+	return "N";
+}
+
+/** Verifica o plano da conta, para uma chamada local. Regra não validará caso return==false **/
+function boolean isValidPlan(String plan, Boolean localCall){
+	if ( (plan.startsWith("Plano Meu Sonho") || plan.startsWith("TIM Meia Tarifa")) && localCall.booleanValue() ){
+		return false;
+	}
+	return true;
+}
+
+rule "R01-1A - Tarifable Voice"
+	salience 90
+	when
+		$usage : TIMUsageDetail ( voiceUsage == true,
+								  mobile == true,
+								  freeUnitIndicator == "N",
+								  discountAmount < 0.001,
+								  microCellDesc == null,
+								  $totalAmount : totalAmount > 0,
+								  $cspBGH : carrierCode -> ("41".equals($cspBGH) || "0".equals($cspBGH)),
+								  $duration : roundedDuration -> (($duration != null) && ($duration.getUnits() > 0)),
+								  $amountBefore : amountBeforePromotions,
+								  $ratePlan : ratePlan,
+								  $date : datetime,
+								  $localCall  : localCall
+		                        )
+
+		$account : Account( $carrierCode : carrierCode )
+
+		$counter : NamedDouble ( name == "tariffed" )
+		
+		eval (isValidPlan($ratePlan, $localCall))
+		
+		eval ( $totalAmount.doubleValue() == $amountBefore.doubleValue() )
+	then
+		String state = $usage.getInvoice().getAccount().getAccountState();
+		String incomingFlag = verifyCallType($usage.getType());
+		CacheableKey key = CachedRatesGuidingVO.createAlternateKey($ratePlan, $usage.getSvcId(), $usage.getTariff(), incomingFlag, $usage.getTariffClass(), state);
+		CachedRatesGuidingVO rate = (CachedRatesGuidingVO) ratingsCache.getFromCache(key);
+		if(rate!=null){
+			List listRating = (ArrayList) rate.getRating($date);
+			//Testado nesse ponto. Se a data da chamada for inferior à de efetivação, retorna null do RangeMap
+			if (listRating!=null){
+				//existe tarifa cadastrada em USAGE_RATES para esta chamada, onde a data da chamada
+				//possui uma tarifa com data de efetivação anterior à esta data chamada.
+				$counter.setValue($counter.getValue() + 1);
+			}else{
+				//Query retornou resultados mas tarifas encontradas não são aplicáveis
+				//Data da chamada < Data de Efetivação das tarifas encontradas para esta chamada.
+				GlobalForLog.log("INFO", "Chamada de data:" + $date +  " cobrou:" + $totalAmount 
+								 + " mas sem tarifa cadastrada no DB");
+			}
+		}
+end
+
+/** Contabiliza evento de mensagens **/
+rule "R01-1B - Tarifable SMS"
+	salience 50
+	when
+		$usage : TIMUsageDetail ( eventUsage == true,
+								  mobile == true,
+								  freeUnitIndicator == "N",
+								  microCellDesc == null,
+								  discountAmount < 0.001,
+								  $totalAmount : totalAmount > 0,
+								  $amountBefore : amountBeforePromotions != null,
+								  $cspBGH : carrierCode -> ("41".equals($cspBGH) || "0".equals($cspBGH)),
+								  $duration : roundedDuration != null,
+								  $typeOfCall : type,
+								  $ratePlan : ratePlan,
+								  $date : datetime
+		                        )
+		$account : Account( $carrierCode : carrierCode )
+
+		$counter : NamedDouble ( name == "tariffed" )
+
+		eval ( $totalAmount.doubleValue() == $amountBefore.doubleValue() )
+	then
+		String state = $usage.getInvoice().getAccount().getAccountState();
+		String incomingFlag = verifyCallType($typeOfCall);
+		CacheableKey key = CachedRatesGuidingVO.createAlternateKey($ratePlan, $usage.getSvcId(), $usage.getTariff(), incomingFlag, $usage.getTariffClass(), state);
+		CachedRatesGuidingVO rate = (CachedRatesGuidingVO) ratingsCache.getFromCache(key);
+		if(rate!=null){
+			List listRating = (ArrayList) rate.getRating($date);
+			//Se a data da mensagem for inferior à de efetivação, retorna null do RangeMap (Testado-OK)
+			if (listRating!=null){
+				//existe tarifa cadastrada em USAGE_RATES para esta mensagem, onde a data da mensagem
+				//possui uma tarifa com data de efetivação anterior à esta data mensagem.
+				$counter.setValue($counter.getValue() + 1);
+			}else{
+				//Query retornou resultados mas tarifas encontradas não são aplicáveis
+				//Data da mensagem < Data de Efetivação das tarifas encontradas para esta chamada.
+				GlobalForLog.log("INFO", "Mensagem de data:" + $date +  " cobrou:" + $totalAmount 
+								 + " mas sem tarifa cadastrada no DB");
+			}
+		}
+end
+
+/**
+ * Esta sub-regra trata os detalhes de uso que não possuam informação de duração cobrada (billedUnits)
+ * ou que esta informação esteja com valor zero. Eventos sem definição de ser: Voz/Dados/Mensagens.
+ */
+rule "R01-1C - Tarifable Undefined"
+	salience 50
+	when
+		$usage : TIMUsageDetail ( eventUsage  == false,
+								  dataUsage  == false,
+								  voiceUsage  == false,
+								  mobile == true,
+								  freeUnitIndicator == "N",
+								  microCellDesc == null,
+								  discountAmount < 0.001,
+								  $totalAmount : totalAmount > 0,
+								  $amountBefore : amountBeforePromotions != null,
+								  $cspBGH : carrierCode -> ("41".equals($cspBGH) || "0".equals($cspBGH)),
+								  $duration : roundedDuration,
+								  $typeOfCall : type,
+								  $ratePlan : ratePlan,
+								  $date : datetime
+		                         )
+		$account : Account( $carrierCode : carrierCode )
+		
+		$counter : NamedDouble ( name == "tariffed" )
+		
+		eval ( $totalAmount.doubleValue() == $amountBefore.doubleValue() )
+	then
+		String state = $usage.getInvoice().getAccount().getAccountState();
+		String incomingFlag = verifyCallType($typeOfCall);
+		CacheableKey key = CachedRatesGuidingVO.createAlternateKey($ratePlan, $usage.getSvcId(), $usage.getTariff(), incomingFlag, $usage.getTariffClass(), state);
+		CachedRatesGuidingVO rate = (CachedRatesGuidingVO) ratingsCache.getFromCache(key);
+		if(rate!=null){
+			List listRating = (ArrayList) rate.getRating($date);
+			//Se a data do evento for inferior à de efetivação, retorna null do RangeMap (Testado-OK)
+			if (listRating!=null){
+				//existe tarifa cadastrada em USAGE_RATES para este evento, onde a data do evento
+				//possui uma tarifa com data de efetivação anterior à esta data do evento.
+				$counter.setValue($counter.getValue() + 1);
+			}else{
+				//Query retornou resultados mas tarifas encontradas não são aplicáveis
+				//Data do evento < Data de Efetivação das tarifas encontradas para este evento.
+				GlobalForLog.log("INFO", "Evento com data:" + $date +  " cobrou:" + $totalAmount 
+								 + " mas sem tarifa cadastrada no DB");
+			}
+		}
+end
+
+rule "Final Count"
+	salience 10
+	when
+		$counter : NamedDouble ( name == "freeunit" )
+		$discounted : NamedDouble ( name == "discounted" )
+		$totals : NamedDouble ( name == "totals" )
+		$tariffed : NamedDouble ( name == "tariffed" )
+		$zeroed : NamedDouble ( name == "zeroed" )
+		$LDed : NamedDouble ( name == "LDed" )
+	then
+		GlobalForLog.log("INFO", "Total freeunits usage is " + $counter.getValue());
+		GlobalForLog.log("INFO", "Total discounted usage is " + $discounted.getValue());
+		GlobalForLog.log("INFO", "Zeroed usage is " + $zeroed.getValue());
+		GlobalForLog.log("INFO", "LDed usage is " + $LDed.getValue());
+		GlobalForLog.log("INFO", "Tariffable usage is " + $tariffed.getValue());
+		GlobalForLog.log("INFO", "Total usage is " + $totals.getValue());
+end

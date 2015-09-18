@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<aggregation-config id="aggregation-config">
+
+   <!-- 
+         INVOICE Fact definition 
+    -->
+	<fact name="invoiceFact" class-name="br.com.auster.om.dynamic.InvoiceFact">
+	
+	  <!-- SOURCE ANCHOR DATA -->
+	  <source name="invoice">
+	     invoices = new ArrayList()
+	     invoice_om.each() { acct ->
+               invoices.addAll(acct.invoices.values())
+	     }
+	     return invoices
+	  </source>
+	  
+	  <!-- FACT Attributes -->
+	  <attribute name="totalAmount" type="double">
+	     invoice.totalAmount
+	  </attribute>
+	  <attribute name="dueDate" type="java.util.Date">
+	     invoice.dueDate
+	  </attribute>
+	  <attribute name="transactionId" type="java.lang.String">
+		  request.transactionId
+	  </attribute>
+	  
+	  <!-- Dimension definition -->
+	  <dimension name="cycleDimension" class-name="br.com.auster.om.dynamic.CycleDimension">
+	    <attribute name="cycleCode" type="java.lang.String" key="true">
+	      invoice.cycleCode
+	    </attribute>
+	    <attribute name="cutDate" type="java.util.Date" key="true">
+	      invoice.cycleEndDate
+	    </attribute>
+	    <attribute name="issueDate" type="java.util.Date">
+	      invoice.issueDate
+	    </attribute>
+	    <attribute name="dueDate" type="java.util.Date" key="true">
+	      invoice.dueDate
+	    </attribute>
+	  </dimension>
+	  
+	  <!-- Dimension Definition -->
+	  <dimension name="accountDimension" class-name="br.com.auster.om.dynamic.AccountDimension">
+	    <attribute name="accountType" type="java.lang.String"  key="true">
+	      invoice.account.accountType
+	    </attribute>
+	    <attribute name="accountNumber" type="java.lang.String"  key="true">
+	      invoice.account.accountNumber
+	    </attribute>
+	  </dimension>
+	  
+	  <!-- Dimension Definition -->
+	  <dimension name="timeDimension" class-name="br.com.auster.om.dynamic.TimeDimension">
+	    <attribute name="year" type="java.lang.String"  key="true">
+		  if (invoice.cycleStartDate == null) { return; }
+	      Calendar calendar = Calendar.getInstance()
+	      calendar.setTime(invoice.cycleStartDate)
+	      calendar.get(Calendar.YEAR)+""
+	    </attribute>
+	    <attribute name="month" type="java.lang.String"  key="true">
+		  if (invoice.cycleStartDate == null) { return; }
+	      Calendar calendar = Calendar.getInstance()
+	      calendar.setTime(invoice.cycleStartDate)
+	      (calendar.get(Calendar.MONTH)+1)+""
+	    </attribute>
+	    <attribute name="day" type="java.lang.String"  key="true">
+		  if (invoice.cycleStartDate == null) { return; }
+	      Calendar calendar = Calendar.getInstance()
+	      calendar.setTime(invoice.cycleStartDate)
+	      calendar.get(Calendar.DATE)+""
+	    </attribute>
+	  </dimension>
+	  
+	  <!-- Dimension Definition -->
+	  <dimension name="geographicDimension" class-name="br.com.auster.om.dynamic.GeographicDimension">
+	    <attribute name="country" type="java.lang.String"  key="true">
+	      "Brasil"
+	    </attribute>
+	    <attribute name="state" type="java.lang.String"  key="true">
+	      invoice.account.accountState
+	    </attribute>
+	  </dimension>
+	  
+	  <!-- Dimension Definition -->
+	  <dimension name="carrierDimension" class-name="br.com.auster.om.dynamic.CarrierDimension">
+	    <attribute name="carrierCode" type="java.lang.String"  key="true">
+	      invoice.account.carrierCode
+	    </attribute>
+	    <attribute name="carrierState" type="java.lang.String"  key="true">
+	      invoice.account.accountState
+	    </attribute>
+	    <attribute name="carrierName" type="java.lang.String">
+				if (invoice.receipts[0] == null) {
+				 return "TIM"
+				} 
+				return invoice.receipts[0].carrierName
+	    </attribute>
+	  </dimension>
+	  
+	</fact>
+	
+	
+   <!-- 
+         CONTRACT TOTALS Fact definition 
+    -->
+	<fact name="contractTotalsFact" class-name="br.com.auster.om.dynamic.ContractTotalsFact">
+	
+	  <!-- SOURCE ANCHOR DATA -->
+	  <source name="contractGroups">
+	     def contractGroups = []
+	     invoice_om.each() { acct ->
+			 acct.invoices.values().each() { invc ->
+			     invc.sections.each() { sect ->
+		             if (sect.caption == "Details") {
+	                     sect.subSections.each() { contr ->
+		                     if (contr.accessNbr != null) { 
+		                         contr.subSections.each() { usageGroup ->
+		                             def contractInfo = [contract:contr, group:usageGroup]
+		                             contractGroups.add(contractInfo);
+		                         }
+		                     }
+		                 } 
+		             } 
+		         }
+		     }  
+	     }
+	     return contractGroups;
+	  </source>
+	  
+	  <!-- FACT Attributes -->
+	  <attribute name="totalAmount" type="double">
+	     contractGroups.group.totalAmount
+	  </attribute>
+	  <attribute name="quantity" type="long">
+	     contractGroups.group.quantity
+	  </attribute>
+	  <attribute name="usedVolume" type="long">
+	     (contractGroups.group.usedVolume == null ? 0L : contractGroups.group.usedVolume.units)
+	  </attribute>
+	  <attribute name="transactionId" type="java.lang.String">
+		  request.transactionId
+	  </attribute>		
+	  
+	  <!-- Dimension definition -->
+	  <dimension name="cycleDimension" class-name="br.com.auster.om.dynamic.CycleDimension">
+	    <attribute name="cycleCode" type="java.lang.String" key="true">
+	      contractGroups.contract.invoice.cycleCode
+	    </attribute>
+	    <attribute name="cutDate" type="java.util.Date" key="true">
+	      contractGroups.contract.invoice.cycleEndDate
+	    </attribute>
+	    <attribute name="issueDate" type="java.util.Date">
+	      contractGroups.contract.invoice.issueDate
+	    </attribute>
+	    <attribute name="dueDate" type="java.util.Date" key="true">
+	      contractGroups.contract.invoice.dueDate
+	    </attribute>
+	  </dimension>
+	  
+	  <!-- Dimension Definition -->
+	  <dimension name="accountDimension" class-name="br.com.auster.om.dynamic.AccountDimension">
+	    <attribute name="accountType" type="java.lang.String"  key="true">
+	      contractGroups.contract.invoice.account.accountType
+	    </attribute>
+	    <attribute name="accountNumber" type="java.lang.String"  key="true">
+	      contractGroups.contract.invoice.account.accountNumber
+	    </attribute>
+	  </dimension>
+	  
+	  <!-- Dimension Definition -->
+	  <dimension name="timeDimension" class-name="br.com.auster.om.dynamic.TimeDimension">
+	    <attribute name="year" type="java.lang.String"  key="true">
+	 	  if (contractGroups.contract.invoice.cycleStartDate == null) { return; }
+	      Calendar calendar = Calendar.getInstance()
+	      calendar.setTime(contractGroups.contract.invoice.cycleStartDate)
+	      calendar.get(Calendar.YEAR)+""
+	    </attribute>
+	    <attribute name="month" type="java.lang.String"  key="true">
+		  if (contractGroups.contract.invoice.cycleStartDate == null) { return; }
+	      Calendar calendar = Calendar.getInstance()
+	      calendar.setTime(contractGroups.contract.invoice.cycleStartDate)
+	      (calendar.get(Calendar.MONTH)+1)+""
+	    </attribute>
+	    <attribute name="day" type="java.lang.String"  key="true">
+		  if (contractGroups.contract.invoice.cycleStartDate == null) { return; }
+	      Calendar calendar = Calendar.getInstance()
+	      calendar.setTime(contractGroups.contract.invoice.cycleStartDate)
+	      calendar.get(Calendar.DATE)+""
+	    </attribute>
+	  </dimension>
+	  
+	  <!-- Dimension Definition -->
+	  <dimension name="geographicDimension" class-name="br.com.auster.om.dynamic.GeographicDimension">
+	    <attribute name="country" type="java.lang.String"  key="true">
+	      "Brasil"
+	    </attribute>
+	    <attribute name="state" type="java.lang.String"  key="true">
+	      contractGroups.contract.invoice.account.accountState
+	    </attribute>
+	  </dimension>
+	  
+	  <!-- Dimension Definition -->
+	  <dimension name="carrierDimension" class-name="br.com.auster.om.dynamic.CarrierDimension">
+	    <attribute name="carrierCode" type="java.lang.String"  key="true">
+	      contractGroups.contract.invoice.account.carrierCode
+	    </attribute>
+	    <attribute name="carrierState" type="java.lang.String"  key="true">
+	      contractGroups.contract.invoice.account.accountState
+	    </attribute>
+	    <attribute name="carrierName" type="java.lang.String">
+	      if (contractGroups.contract.invoice.receipts[0] == null) {
+			return  "TIM"
+		  }
+		  return contractGroups.contract.invoice.receipts[0].carrierName
+	    </attribute>
+	  </dimension>
+		
+	  <!-- Dimension Definition -->
+	  <dimension name="contractDimension" class-name="br.com.auster.om.dynamic.ContractDimension">
+	    <attribute name="contractCode" type="java.lang.String"  key="true">
+		  contractGroups.contract.contractNumber
+	    </attribute>
+	    <attribute name="accessNumber" type="java.lang.String"  key="true">
+  		  (contractGroups.contract.accessNbr == null ? "" : contractGroups.contract.accessNbr)
+	    </attribute>
+	    <attribute name="contractOwner" type="java.lang.String">
+  		  contractGroups.contract.userName
+	    </attribute>
+	  </dimension>		
+
+	  <!-- Dimension Definition -->
+	  <dimension name="rateplanDimension" class-name="br.com.auster.om.dynamic.RateplanDimension">
+	    <attribute name="rateplan" type="java.lang.String"  key="true">
+		  contractGroups.contract.ratePlan
+	    </attribute>
+	    <attribute name="serviceType" type="java.lang.String"  key="true">
+		  contractGroups.group.sectionName
+	    </attribute>
+	  </dimension>		
+					  
+	</fact>	
+	
+</aggregation-config>

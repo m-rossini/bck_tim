@@ -1,0 +1,103 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+/**
+ *
+ */
+rule "R09-3 Flat account validation" 
+	salience 50
+	when	
+		$account : Account( $custcode : accountNumber -> ( ($custcode.substring(0,1).equals("1") == true) ),
+							$acctype : accountType -> ( ($acctype.equals("F") == false) ),
+							$carrierCode : carrierCode
+		                  )
+	then	
+		//consequenceBuilder.setLenient(true);
+		consequenceBuilder.setRule("R09-3","Tipo de Conta Inválido"); 
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+ 
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("O tipo desta conta deveria ser F");
+		c.addAttribute("Customer Code", $custcode);
+		c.addAttribute("Tipo da Conta", $acctype);
+		c.addNullAttribute("Tipo da Fatura");
+		
+		results.add(c);
+end 
+
+
+rule "R09-3 Large account validation" 
+	salience 50
+	when	
+		$account : Account( $custcode : accountNumber -> ( ($custcode.substring(0,1).equals("1") == false) ),
+							$acctype : accountType -> ( ($acctype.equals("L") == false) ),
+							$carrierCode : carrierCode
+		                  )
+	then	
+		//consequenceBuilder.setLenient(true);
+		consequenceBuilder.setRule("R09-3","Tipo de Conta Inválido"); 
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+ 
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("O tipo desta conta deveria ser L");
+		c.addAttribute("Customer Code", $custcode);
+		c.addAttribute("Tipo da Conta", $acctype);
+		c.addNullAttribute("Tipo da Fatura");
+		
+		results.add(c);
+end 
+
+rule "R09-3 Document Type validation" 
+	salience 50
+	when	
+		$account : Account( $custcode : accountNumber,
+							$acctype : accountType -> ( ($acctype.equals("F") == true) ),
+							$carrierCode : carrierCode
+		                  )
+		                  
+		$invoice : Invoice( $doctype : documentType -> ( (($doctype.equals("3") == true) || ($doctype.equals("4") == true)) )
+		                  )		                  
+	then	
+		//consequenceBuilder.setLenient(true);
+		consequenceBuilder.setRule("R09-3","Tipo de Conta Inválido"); 
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+ 
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Contas de tipo F não podem possuir faturas de tipo 3 ou 4");
+		c.addAttribute("Customer Code", $custcode);
+		c.addAttribute("Tipo da Conta", $acctype);
+		c.addAttribute("Tipo da Fatura", $doctype);
+		
+		results.add(c);
+end 

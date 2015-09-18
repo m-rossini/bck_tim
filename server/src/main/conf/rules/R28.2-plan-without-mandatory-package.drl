@@ -1,0 +1,81 @@
+#created on: 05/10/2007
+package br.com.auster.tim.billchekout
+
+#list any import classes here.
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.tim.billcheckout.param.PackagesByPlansVO;
+import br.com.auster.tim.billcheckout.param.PlansVO;
+import br.com.auster.tim.billcheckout.param.PackageVO;
+
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Receipt;
+import br.com.auster.om.filter.request.BillcheckoutRequestWrapper;
+import br.com.auster.tim.om.invoice.TIMReceiptDetail;
+import br.com.auster.tim.om.invoice.FreeUnitsReceiptDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.ServiceReceiptDetail;
+
+#declare any global variables here
+global br.com.auster.tim.billcheckout.param.PackageCache packageCache;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.tim.billcheckout.param.PlansCache planCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+rule "R28-2 - Plan Without Mandatory Package"
+
+	when
+
+		ContractInfoSection( $contractNumber : contractNumber,
+							 $accessNumber : accessNbr,
+			                 $ratePlan : ratePlan
+			               )
+
+		not FreeUnitsReceiptDetail( $package : serviceId, 
+									contractNumber == $contractNumber )
+									
+		not FreeUnitsReceiptDetail( shared == true  )																												
+
+		$account : Account( $carrierCode : carrierCode,
+							$carrierState : carrierState
+						  )
+
+		BillcheckoutRequestWrapper ( $request : request )
+
+	then
+		planCache.refreshCache($request.getTransactionId());
+		PlansVO plan = (PlansVO) planCache.getFromCache(PlansVO.createAlternateKey($ratePlan, $carrierState));
+
+		if (plan != null) {
+		
+				if ( plan.getPackageMandatory() ) {
+
+					consequenceBuilder.setRule("R28-2","Plano Ativado sem Pct Atribuído");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("O plano deste contrato obriga a presença de um pacote de minutos.");
+					c.addAttribute("Número do Contrato", $contractNumber);
+					c.addAttribute("Número do Acesso", $accessNumber);
+					c.addAttribute("Nome do Plano", $ratePlan);
+					results.add(c);
+			}
+
+		}
+
+end

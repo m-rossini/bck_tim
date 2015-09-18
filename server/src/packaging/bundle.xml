@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<project name="TIM Cmdline Packaging" basedir="@[user.dir]@" default="build-distribution-prod">
+
+	<property file="@[user.dir]@/src/packaging/license.properties"/>
+    <property environment="env"/>
+	<property   name="bundle.workdir"
+				value="@[user.dir]@/target/bundling"/>
+	<property   name="bundle.filename.prod"
+				value="@[project.currentArtifact]@-@[project.currentVersion]@.PROD.zip"/>
+	<property   name="bundle.filename.ivt"
+				value="@[project.currentArtifact]@-@[project.currentVersion]@.IVT.zip"/>
+	<property   name="bundle.filename.desenv"
+				value="@[project.currentArtifact]@-@[project.currentVersion]@.DESENV.zip"/>
+	<property   name="source.dir"
+				value="@[user.dir]@/src/main"/>
+	<property   name="corerules.workdir"
+				value="@[user.dir]@/target/core-rules"/>
+
+	<target name="prepare-workdir">
+		<delete dir="${corerules.workdir}"/>
+		<delete dir="${bundle.workdir}"/>
+		<mkdir dir="${bundle.workdir}"/>
+		<mkdir dir="${bundle.workdir}/log"/>
+	</target>
+
+	<target name="license-file">
+      <java classname="br.com.auster.common.security.LockGenerator"
+            failonerror="true"
+		    fork="true">
+          <!-- classpath -->
+          <classpath>
+            <pathelement location="@[auster:auster-commons-base]@"/>
+			<pathelement location="@[jug:jug-asl]@"/>
+          </classpath>
+          <!-- Output filename -->
+          <arg file="${bundle.workdir}/${license.filename}"/>
+          <!-- Number of days the resource can be used (from the current date) -->
+          <arg value="${license.numberofdays}"/>
+          <!-- Product ID -->
+          <arg value="${license.productid}"/>
+          <!-- Number of times resource can be executed -->
+          <arg value="${license.numberoftimes}"/>
+          <!-- Restricts the execution to the specified IP address -->
+          <arg value="${license.ipaddress}"/>
+          <arg value="${license.macAddress}"/>
+      </java>
+	</target>
+
+	<target name="override-jms-object">
+        <jar destfile="target/@[tim:tim-billcheckout-server]@"
+			 update="true">
+           <zipfileset src="@[auster:auster-commons-base]@"
+                       includes="br/com/auster/common/security/ResourceReady.class"/>
+		   <zipfileset dir="${source.dir}/conf" includes="key.bin"/>
+           <zipfileset src="@[auster:dware-console-plugins]@"
+                       includes="br/com/auster/**/RequestFinished.class"/>
+		   <zipfileset src="@[auster:data-aware-stubs]@"/>
+        </jar>
+	</target>
+
+	<target name="extract-core-rules">
+		<mkdir dir="${corerules.workdir}"/>
+        <unjar src="target/@[tim:tim-billcheckout-server]@"
+			   dest="${corerules.workdir}">
+			<patternset>
+				<include name="conf/rules/*.drl"/>
+			</patternset>
+		</unjar>
+        <copy todir="${corerules.workdir}" overwrite="true">
+             <fileset dir="src/main">
+                 <include name="conf/rules/**/*.drl"/>
+             </fileset>
+        </copy>
+	</target>
+
+
+	<target name="convert-charset">
+		<!-- converting from target/core-rules/conf/rules -->
+		<exec dir="${basedir}"
+			  executable="bash">
+			<arg value="${basedir}/src/packaging/convert.sh"/>
+			<arg value="${basedir}/target/core-rules/conf/rules"/>
+			<arg value="${basedir}"/>
+			<arg value="*.drl"/>
+		</exec>
+	</target>
+
+		
+		
+	<!--
+	
+	*******************************************************************************************************************************
+	* 																															  *
+	*                                                IMPORTANT                                                                    *
+	* 																															  *
+	*******************************************************************************************************************************
+	
+	Package sequence:
+	
+	* 1st: Build IVT package. This ZIP will not convert DRL files into UTF charset, since this environment is configured as ISO.
+	* 2nd: Build DESENV package. Now we will convert DRL files into UTF charset. This convertion will be reused for PROD package.
+	* 3rd: Build PROD package. This is the same package as DESENV, but configuration files are switched to match IP and other 
+	       environment-specific attributes. DRL files are also in UTF charset.	
+	-->
+	
+	
+	<!--
+		Builds distribution file for PRODUCTION environment
+	-->
+    <target name="build-distribution-prod" depends="build-distribution">
+
+		<zip destfile="${bundle.workdir}/${bundle.filename.prod}" duplicate="preserve">
+			<zipfileset file="${bundle.workdir}/license.bin"/>
+			<zipfileset dir="${source.dir}/bin"     prefix="bin"/>
+			<!-- overriding configuration files -->
+			<zipfileset dir="${source.dir}/conf/prod"    prefix="conf"/>
+			<zipfileset dir="${source.dir}/conf"    prefix="conf"
+				        excludes="ivt/**,prod/**,key.bin,**/*.passwd,**/*.drl,**/*.md5"/>
+			<zipfileset dir="${corerules.workdir}"/>
+			<zipfileset dir="${source.dir}/etc"    prefix="etc"/>
+			<zipfileset dir="${bundle.workdir}/log" prefix="log"/>
+			<!-- dependent lib.s -->
+			<zipfileset file="@[log4j:log4j]@" prefix="lib"/>
+			<zipfileset file="@[commons-cli:commons-cli]@" prefix="lib"/>
+			<zipfileset file="@[commons-collections:commons-collections]@" prefix="lib"/>
+			<zipfileset file="@[commons-dbcp:commons-dbcp]@" prefix="lib"/>
+			<zipfileset file="@[commons-pool:commons-pool]@" prefix="lib"/>
+			<zipfileset file="@[commons-lang:commons-lang]@" prefix="lib"/>
+			<zipfileset file="@[commons-io:commons-io]@" prefix="lib"/>
+			<zipfileset file="@[commons-logging:commons-logging]@" prefix="lib"/>
+			<zipfileset file="@[commons-jxpath:commons-jxpath]@" prefix="lib"/>
+			<zipfileset file="@[trove:trove]@" prefix="lib"/>
+			<zipfileset file="@[bea:wlclient]@" prefix="lib"/>
+			<zipfileset file="@[bea:wljmsclient]@" prefix="lib"/>
+			<zipfileset file="@[ant:ant]@" prefix="lib"/>
+			<zipfileset file="@[org.hibernate:hibernate]@" prefix="lib"/>
+			<zipfileset file="@[org.drools:drools-core]@" prefix="lib"/>
+			<zipfileset file="@[org.drools:drools-compiler]@" prefix="lib"/>
+			<zipfileset file="@[org.eclipse:core]@" prefix="lib"/>
+			<zipfileset file="@[org.apache:commons-jci-core]@" prefix="lib"/>
+			<zipfileset file="@[org.apache:commons-jci-eclipse]@" prefix="lib"/>
+			<zipfileset file="@[org.apache:commons-jci-janino]@" prefix="lib"/>
+			<zipfileset file="@[antlr:antlr]@" prefix="lib"/>
+			<zipfileset file="@[antlr:antlr-ea]@" prefix="lib"/>
+			<zipfileset file="@[antlr:stringtemplate]@" prefix="lib"/>
+			<zipfileset file="@[minaret:datedFileAppender]@" prefix="lib"/>
+			<zipfileset file="@[asm:asm]@" prefix="lib"/>
+			<zipfileset file="@[asm:auster-asm]@" prefix="lib"/>
+			<zipfileset file="@[groovy:groovy-all]@" prefix="lib"/>
+			<zipfileset file="@[oracle:oracle-jdbc4g]@" prefix="lib"/>
+			<zipfileset file="@[dom4j:dom4j]@" prefix="lib"/>
+			<zipfileset file="@[cglib:cglib]@" prefix="lib"/>
+			<zipfileset file="@[jug:jug-asl]@" prefix="lib"/>
+			<zipfileset file="@[ehcache:ehcache]@" prefix="lib"/>
+			<zipfileset file="@[javax.transaction:jta]@" prefix="lib"/>
+			<zipfileset file="@[com.thoughtworks.xstream:xstream]@" prefix="lib"/>
+			<zipfileset file="@[sun:FastInfoset]@" prefix="lib"/>
+			<zipfileset file="@[xpp3:xpp3_min]@" prefix="lib"/>
+			<!-- endorsed libs. -->
+			<zipfileset file="@[xalan:xalan]@" prefix="lib/endorsed"/>
+			<!-- cmdline jar -->
+			<zipfileset file="target/@[tim:tim-billcheckout-server]@" prefix="lib"/>
+		</zip>
+	</target>
+
+
+	<!--
+		Builds distribution file for IVT environment
+	-->
+    <target name="build-distribution-ivt" depends="prepare-workdir,override-jms-object,license-file,extract-core-rules">
+
+		<zip destfile="${bundle.workdir}/${bundle.filename.ivt}" duplicate="preserve">
+			<zipfileset file="${bundle.workdir}/license.bin"/>
+			<zipfileset dir="${source.dir}/bin"     prefix="bin"/>
+			<!-- overriding configuration files -->
+			<zipfileset dir="${source.dir}/conf/ivt"    prefix="conf"/>
+			<zipfileset dir="${source.dir}/conf"    prefix="conf"
+				        excludes="ivt/**,prod/**,key.bin,**/*.passwd,**/*.drl,**/*.md5"/>
+			<zipfileset dir="${corerules.workdir}"/>
+			<zipfileset dir="${source.dir}/etc"    prefix="etc"/>
+			<zipfileset dir="${bundle.workdir}/log" prefix="log"/>
+			<!-- dependent lib.s -->
+			<zipfileset file="@[log4j:log4j]@" prefix="lib"/>
+			<zipfileset file="@[commons-cli:commons-cli]@" prefix="lib"/>
+			<zipfileset file="@[commons-collections:commons-collections]@" prefix="lib"/>
+			<zipfileset file="@[commons-dbcp:commons-dbcp]@" prefix="lib"/>
+			<zipfileset file="@[commons-pool:commons-pool]@" prefix="lib"/>
+			<zipfileset file="@[commons-lang:commons-lang]@" prefix="lib"/>
+			<zipfileset file="@[commons-io:commons-io]@" prefix="lib"/>
+			<zipfileset file="@[commons-logging:commons-logging]@" prefix="lib"/>
+			<zipfileset file="@[commons-jxpath:commons-jxpath]@" prefix="lib"/>
+			<zipfileset file="@[trove:trove]@" prefix="lib"/>
+			<zipfileset file="@[bea:wlclient]@" prefix="lib"/>
+			<zipfileset file="@[bea:wljmsclient]@" prefix="lib"/>
+			<zipfileset file="@[ant:ant]@" prefix="lib"/>
+			<zipfileset file="@[org.hibernate:hibernate]@" prefix="lib"/>
+			<zipfileset file="@[org.drools:drools-core]@" prefix="lib"/>
+			<zipfileset file="@[org.drools:drools-compiler]@" prefix="lib"/>
+			<zipfileset file="@[org.eclipse:core]@" prefix="lib"/>
+			<zipfileset file="@[org.apache:commons-jci-core]@" prefix="lib"/>
+			<zipfileset file="@[org.apache:commons-jci-eclipse]@" prefix="lib"/>
+			<zipfileset file="@[org.apache:commons-jci-janino]@" prefix="lib"/>
+			<zipfileset file="@[antlr:antlr]@" prefix="lib"/>
+			<zipfileset file="@[antlr:antlr-ea]@" prefix="lib"/>
+			<zipfileset file="@[antlr:stringtemplate]@" prefix="lib"/>
+			<zipfileset file="@[minaret:datedFileAppender]@" prefix="lib"/>
+			<zipfileset file="@[asm:asm]@" prefix="lib"/>
+			<zipfileset file="@[asm:auster-asm]@" prefix="lib"/>
+			<zipfileset file="@[groovy:groovy-all]@" prefix="lib"/>
+			<zipfileset file="@[oracle:oracle-jdbc4g]@" prefix="lib"/>
+			<zipfileset file="@[dom4j:dom4j]@" prefix="lib"/>
+			<zipfileset file="@[cglib:cglib]@" prefix="lib"/>
+			<zipfileset file="@[jug:jug-asl]@" prefix="lib"/>
+			<zipfileset file="@[ehcache:ehcache]@" prefix="lib"/>
+			<zipfileset file="@[javax.transaction:jta]@" prefix="lib"/>
+			<zipfileset file="@[com.thoughtworks.xstream:xstream]@" prefix="lib"/>
+			<zipfileset file="@[sun:FastInfoset]@" prefix="lib"/>
+			<zipfileset file="@[xpp3:xpp3_min]@" prefix="lib"/>
+			<!-- endorsed libs. -->
+			<zipfileset file="@[xalan:xalan]@" prefix="lib/endorsed"/>
+			<!-- cmdline jar -->
+			<zipfileset file="target/@[tim:tim-billcheckout-server]@" prefix="lib"/>
+		</zip>
+	</target>
+
+	<!--
+		Builds distribution file for DEVELOPMENT environment
+	-->
+    <target name="build-distribution" depends="build-distribution-ivt,convert-charset">
+
+		<zip destfile="${bundle.workdir}/${bundle.filename.desenv}" duplicate="preserve">
+			<zipfileset file="${bundle.workdir}/license.bin"/>
+			<zipfileset dir="${source.dir}/bin"     prefix="bin"/>
+			<zipfileset dir="${source.dir}/conf"    prefix="conf"
+				        excludes="ivt/**,prod/**,key.bin,**/*.passwd,**/*.drl,**/*.md5"/>
+			<zipfileset dir="${corerules.workdir}"/>
+			<zipfileset dir="${source.dir}/etc"    prefix="etc"/>
+			<zipfileset dir="${bundle.workdir}/log" prefix="log"/>
+			<!-- dependent lib.s -->
+			<zipfileset file="@[log4j:log4j]@" prefix="lib"/>
+			<zipfileset file="@[commons-cli:commons-cli]@" prefix="lib"/>
+			<zipfileset file="@[commons-collections:commons-collections]@" prefix="lib"/>
+			<zipfileset file="@[commons-dbcp:commons-dbcp]@" prefix="lib"/>
+			<zipfileset file="@[commons-pool:commons-pool]@" prefix="lib"/>
+			<zipfileset file="@[commons-lang:commons-lang]@" prefix="lib"/>
+			<zipfileset file="@[commons-io:commons-io]@" prefix="lib"/>
+			<zipfileset file="@[commons-logging:commons-logging]@" prefix="lib"/>
+			<zipfileset file="@[commons-jxpath:commons-jxpath]@" prefix="lib"/>
+			<zipfileset file="@[trove:trove]@" prefix="lib"/>
+			<zipfileset file="@[bea:wlclient]@" prefix="lib"/>
+			<zipfileset file="@[bea:wljmsclient]@" prefix="lib"/>
+			<zipfileset file="@[ant:ant]@" prefix="lib"/>
+			<zipfileset file="@[org.hibernate:hibernate]@" prefix="lib"/>
+			<zipfileset file="@[org.drools:drools-core]@" prefix="lib"/>
+			<zipfileset file="@[org.drools:drools-compiler]@" prefix="lib"/>
+			<zipfileset file="@[org.eclipse:core]@" prefix="lib"/>
+			<zipfileset file="@[org.apache:commons-jci-core]@" prefix="lib"/>
+			<zipfileset file="@[org.apache:commons-jci-eclipse]@" prefix="lib"/>
+			<zipfileset file="@[org.apache:commons-jci-janino]@" prefix="lib"/>
+			<zipfileset file="@[antlr:antlr]@" prefix="lib"/>
+			<zipfileset file="@[antlr:antlr-ea]@" prefix="lib"/>
+			<zipfileset file="@[antlr:stringtemplate]@" prefix="lib"/>
+			<zipfileset file="@[minaret:datedFileAppender]@" prefix="lib"/>
+			<zipfileset file="@[asm:asm]@" prefix="lib"/>
+			<zipfileset file="@[asm:auster-asm]@" prefix="lib"/>
+			<zipfileset file="@[groovy:groovy-all]@" prefix="lib"/>
+			<zipfileset file="@[oracle:oracle-jdbc4g]@" prefix="lib"/>
+			<zipfileset file="@[dom4j:dom4j]@" prefix="lib"/>
+			<zipfileset file="@[cglib:cglib]@" prefix="lib"/>
+			<zipfileset file="@[jug:jug-asl]@" prefix="lib"/>
+			<zipfileset file="@[ehcache:ehcache]@" prefix="lib"/>
+			<zipfileset file="@[javax.transaction:jta]@" prefix="lib"/>
+			<zipfileset file="@[com.thoughtworks.xstream:xstream]@" prefix="lib"/>
+			<zipfileset file="@[sun:FastInfoset]@" prefix="lib"/>
+			<zipfileset file="@[xpp3:xpp3_min]@" prefix="lib"/>
+			<!-- endorsed libs. -->
+			<zipfileset file="@[xalan:xalan]@" prefix="lib/endorsed"/>
+			<!-- cmdline jar -->
+			<zipfileset file="target/@[tim:tim-billcheckout-server]@" prefix="lib"/>
+		</zip>
+	</target>
+
+</project>
+

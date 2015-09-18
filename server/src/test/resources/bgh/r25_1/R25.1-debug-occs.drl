@@ -1,0 +1,51 @@
+#created on: 25/10/2007
+package br.com.auster.tim.billchekout
+
+#list any import classes here.
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Receipt;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.billcheckout.param.ContractServicesVO;
+import br.com.auster.tim.billcheckout.param.ServicesByContractVO;
+import br.com.auster.tim.billcheckout.param.ServicesVO;
+import br.com.auster.tim.billcheckout.param.MpulktmbVO;
+import br.com.auster.tim.billcheckout.param.MpulkpvbVO;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Date;
+import java.text.SimpleDateFormat;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+#declare any global variables here
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.tim.billcheckout.param.ServicesCache servicesCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global br.com.auster.tim.billcheckout.param.MpulktmbCache mpulktmbCache;
+global br.com.auster.tim.billcheckout.param.MpulkpvbCache mpulkpvbCache;
+global br.com.auster.tim.billcheckout.param.ContractServicesDAO contrServicesDAO;
+global java.util.List results;
+
+
+
+rule "Regra 25.1 - Debug OCCs"
+
+	salience 80
+
+	when
+
+		GroupItemReceiptDetail ( OCC == true, $description : caption  )
+
+	then
+		GlobalForLog.log("DEBUG", "Found OCC with description " + $description);
+end

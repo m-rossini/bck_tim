@@ -1,0 +1,13 @@
+LOAD DATA
+BADFILE 'log/svc_plans.bad'
+DISCARDFILE 'log/svc_plans.dsc'
+APPEND
+INTO TABLE QLF_SERVICES_PLANS
+FIELDS TERMINATED BY ","
+( 
+ 	OBJID 				EXPRESSION "seq1.nextval", 
+ 	CUSTOM_1      position(1:2048) "null",
+	PLANS_UID			position(1:1) "loader.get_plan_uid(loader.word(:custom_1,5,';'), loader.word(:custom_1,9,';'))" ,
+	SERVICES_UID	position(1:1) "loader.get_uid('QLF_SERVICES', 'SHORT_DESC', loader.word(:custom_1,3,';'))" ,
+	CONTAIN_FLG		position(1:1) "loader.word(:custom_1,4,';')"		
+)

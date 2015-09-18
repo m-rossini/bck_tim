@@ -1,0 +1,4 @@
+1000;servico 1;serv1;Y;1100;plano 1;plan1;plan name 1;SP
+2000;servico 2;serv2;Y;2100;plano 2;plan2;plan name 2;SP
+3000;servico 3;serv3;Y;3100;plano 3;plan2;plan name 1;BA
+0000;servico X;serv1;Y;0100;plano X;plan2;plan name 1;RS

@@ -1,0 +1,16 @@
+GAM-Dados Familia;14;Chamadas Com. Dados;Todo Dia;1-Em Escada;6-Contador De Uso;4;4300;Plano Familia AM-GAM;TIM Connect / TIM Wap;01-01-2001
+GAM-Dados Familia;14;Chamadas Com. Dados;Todo Dia;1-Em Escada;6-Contador De Uso;3;999;Plano Familia AM-GAM;TIM Connect / TIM Wap;01-01-2001
+GAM-Dados Familia;14;Chamadas Com. Dados;Todo Dia;1-Em Escada;6-Contador De Uso;2;0;Plano Familia AM-GAM;TIM Connect / TIM Wap;01-01-2001
+GAM-Dados Familia;14;Chamadas Com. Dados;Todo Dia;1-Em Escada;6-Contador De Uso;1;6;Plano Familia AM-GAM;TIM Connect / TIM Wap;01-01-2001
+GAM-Dados Familia;14;Chamadas VC3 TIM-TIM;Todo Dia;1-Em Escada;6-Contador De Uso;4;4300;Plano Familia AM-GAM;TIM Connect / TIM Wap;01-01-2001
+GAM-Dados Familia;14;Chamadas VC3 TIM-TIM;Todo Dia;1-Em Escada;6-Contador De Uso;3;999;Plano Familia AM-GAM;TIM Connect / TIM Wap;01-01-2001
+GAM-Dados Familia;14;Chamadas VC3 TIM-TIM;Todo Dia;1-Em Escada;6-Contador De Uso;2;0;Plano Familia AM-GAM;TIM Connect / TIM Wap;01-01-2001
+GAM-Dados Familia;14;Chamadas VC3 TIM-TIM;Todo Dia;1-Em Escada;6-Contador De Uso;1;6;Plano Familia AM-GAM;TIM Connect / TIM Wap;01-01-2001
+GAM-Dados Familia;14;Chamadas TIM-Móvel C;Todo Dia;1-Em Escada;6-Contador De Uso;4;6000;Plano Familia AM-GAM;TIM Connect / TIM Wap;01-01-2001
+GAM-Dados Familia;14;Chamadas TIM-Móvel C;Todo Dia;1-Em Escada;6-Contador De Uso;3;999;Plano Familia AM-GAM;TIM Connect / TIM Wap;01-01-2001
+GAM-Dados Familia;14;Chamadas TIM-Móvel C;Todo Dia;1-Em Escada;6-Contador De Uso;2;0;Plano Familia AM-GAM;TIM Connect / TIM Wap;01-01-2001
+GAM-Dados Familia;14;Chamadas TIM-Móvel C;Todo Dia;1-Em Escada;6-Contador De Uso;1;6;Plano Familia AM-GAM;TIM Connect / TIM Wap;01-01-2001
+GAM-Telef Familia (out);14;Chamadas TIM-SME M;Todo Dia;1-Em Escada;6-Contador De Uso;4;6000;Plano Familia AM-GAM;Serviço de Voz;01-01-2001
+GAM-Telef Familia (out);14;Chamadas TIM-SME M;Todo Dia;1-Em Escada;6-Contador De Uso;3;999;Plano Familia AM-GAM;Serviço de Voz;01-01-2001
+GAM-Telef Familia (out);14;Chamadas TIM-SME M;Todo Dia;1-Em Escada;6-Contador De Uso;2;0;Plano Familia AM-GAM;Serviço de Voz;01-01-2001
+GAM-Telef Familia (out);14;Chamadas TIM-SME M;Todo Dia;1-Em Escada;6-Contador De Uso;1;6;Plano Familia AM-GAM;Serviço de Voz;01-01-2001

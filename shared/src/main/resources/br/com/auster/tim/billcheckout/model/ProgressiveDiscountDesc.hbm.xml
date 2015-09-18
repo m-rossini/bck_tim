@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<!DOCTYPE hibernate-mapping PUBLIC
+        "-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+        "etc/hibernate-mapping-3.0.dtd">
+
+<hibernate-mapping>
+
+    <class lazy="false"
+        name="br.com.auster.tim.billcheckout.model.ProgressiveDiscountDesc"
+        table="PROG_DISCOUNT_DESC">
+
+		<!-- PK for this class -->
+        <id name="uid"
+            column="OBJID"
+            type="long"
+            unsaved-value="0">
+            <generator class="sequence">
+                <param name="sequence">progressive_discount_desc_uid</param>
+        	</generator>
+        </id>
+
+        <property
+            name="serviceShortDesc"
+            type="string"
+            update="true"
+            insert="true"
+            column="SERVICE_SHDES"/>
+
+        <property
+            name="discountDesc"
+            type="string"
+            update="true"
+            insert="true"
+            column="DISC_DESCRIPTION"/>
+
+		<property
+			name="state"
+			type="string"
+			update="true"
+			insert="true"
+			column="STATE"/>
+
+         <many-to-one
+			name="progDiscount"
+		    update="true"
+            insert="true"
+			column="DISC_UID"
+			not-null="true"
+			class="br.com.auster.tim.billcheckout.model.ProgressiveDiscount"
+			lazy="false"/>
+
+   </class>
+
+</hibernate-mapping>

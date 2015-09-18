@@ -1,0 +1,13 @@
+LOAD DATA
+BADFILE 'log/tzone_usage.bad'
+DISCARDFILE 'log/tzone_usage.dsc'
+APPEND
+INTO TABLE QLF_TARIFFZONE_USAGEGROUP
+FIELDS TERMINATED BY ","
+( 
+ 	OBJID 					EXPRESSION "seq1.nextval", 
+ 	CUSTOM_1      	position(1:2048) "null",
+	TARIFF_ZONE_UID	position(1:1) "loader.get_uid('QLF_TARIFF_ZONE', 'SHORT_DESC', loader.word(:custom_1,1,';'))" ,
+	USAGE_GROUP_UID	position(1:1) "loader.get_uid('QLF_USAGE_GROUP', 'NAME', loader.word(:custom_1,3,';'))" ,
+	ALLOWED_SECTION	position(1:1) "loader.word(:custom_1,2,';')"
+)

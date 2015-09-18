@@ -1,0 +1,282 @@
+package br.com.auster.tim.billcheckout
+
+#list any import classes here
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.billcheckout.consequence.DimensionCache;
+
+import br.com.auster.common.lang.NamedHashMap;
+
+import br.com.auster.om.util.UnitCounter;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.tim.om.invoice.FreeUnitsReceiptDetail;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.UsageFUDetail;
+import br.com.auster.tim.billcheckout.tariff.megatim.MegaTIMActivation;
+import br.com.auster.tim.billcheckout.tariff.MegaTIMVO;
+import br.com.auster.tim.billcheckout.param.ContractServicesPeriodVO;
+import br.com.auster.tim.billcheckout.param.CustomerSituationVO;
+
+import java.util.Iterator;
+
+#declare any global variables here
+global java.util.List results;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global br.com.auster.tim.billcheckout.param.CustomerSituationCache customerSituationCache;
+
+
+
+
+##################
+#
+#
+# Regras R34.2
+#
+#
+##################
+
+
+rule "R34.2 - Sum all benefitted usages"
+salience 80
+when
+
+	$fudetail : UsageFUDetail( $fuid : accountID,
+							   $duration : reductionVolume )
+
+	TIMUsageDetail ( $coid : contractNumber,  
+					 $svc : svcId,
+					 freeUnitDetails contains $fudetail ) 
+						 
+	MegaTIMActivation ( contractId == $coid, 
+						fuAccountId == $fuid )
+
+	$nm : NamedHashMap ( $name : name -> ($name.equals("R34.2-"+$coid)) )
+	
+then
+	Integer i = new Integer(0);
+	if ($nm.containsKey($svc)) {
+		i = (Integer)$nm.get($svc);
+	}
+	$nm.put( $svc, new Integer(i.intValue() + 1) );	
+end
+
+rule "R34.2 - Beneffited more than configured for a service"
+// this salience is lower 'cause we have to sum all usage first (see this rule below)
+salience 70
+when
+
+	MegaTIMActivation ( $coid : contractId, 
+						$vo : megaTIMVO  )
+
+	ContractInfoSection ( contractNumber == $coid,
+						  $accNumber : accessNbr, 
+						  $rateplan : ratePlan )
+
+	$nm : NamedHashMap ( $name : name -> ($name.equals("R34.2-"+$coid)) )					 
+
+	Account ( $carrierState : carrierState,
+			  $carrierCode : carrierCode )
+	
+then
+	
+	Iterator it = $nm.keySet().iterator();
+	while (it.hasNext()) {
+		String svc = (String) it.next();
+		if ($vo.hasUsageLimit(svc)) {
+		
+			Integer limit = $vo.getUsageLimit(svc);
+			Integer used = (Integer)$nm.get(svc);
+			if ( (limit.intValue() > 0) && (used.intValue() > limit.intValue()) ) {
+			
+				consequenceBuilder.setRule("R34-2","Benefícios da Promoção Mega TIM");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+	
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+	
+				c.setDescription("O volume de benefícios destinados a este contrato excederam o limite configurado.");
+				c.addAttribute("Número do contrato", $coid);
+				c.addAttribute("Número do acesso", $accNumber);
+				c.addAttribute("Plano", $rateplan);
+				c.addAttribute("Pacote MegaTIM", $vo.getDescription());
+				c.addNullAttribute("Valor cobrado");
+				c.addNullAttribute("Valor calculado");
+				c.addLongAttribute("Volume utilizado", used.intValue());
+				c.addLongAttribute("Limite configurado", limit.intValue());
+			
+				results.add(c);
+			}		
+		}
+	}  
+
+end
+
+
+rule "R34.2 - Charged customer using uneligible promotion"
+salience 80
+when
+
+	MegaTIMActivation ( $coid : contractId, 
+						$vo : megaTIMVO )
+
+	ContractInfoSection ( contractNumber == $coid,
+						  $accNumber : accessNbr, 
+						  $rateplan : ratePlan )
+
+	Account ( $carrierState : carrierState,
+			  $carrierCode : carrierCode )
+	
+	Invoice ( $dtInit : cycleStartDate,
+			  $dtEnd  : cycleEndDate )
+		
+then
+	CustomerSituationVO vo = (CustomerSituationVO) customerSituationCache.getFromCache( CustomerSituationVO.createKey($coid) );
+	if (vo != null) {		
+		boolean newCustomer = vo.isInPeriod($dtInit, $dtEnd);
+		int error = 0;
+		if (newCustomer && ($vo.getNewCustomerFee()<0)) {
+			error = 1;
+		} else if ((!newCustomer) && ($vo.getCurrentCustomerFee()<0)) {
+			error = 2;
+		} 
+		
+		if (error > 0) { 
+			consequenceBuilder.setRule("R34-2","Benefícios da Promoção Mega TIM");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+		
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			
+			switch (error) {
+				case 1:	c.setDescription("Não existe tarifa configurada para clientes novos na base."); break; 
+				case 2:	c.setDescription("Não existe tarifa configurada para clientes pré-existentes na base."); 
+			}
+	
+			c.addAttribute("Número do contrato", $coid);
+			c.addAttribute("Número do acesso", $accNumber);
+			c.addAttribute("Plano", $rateplan);
+			c.addAttribute("Pacote MegaTIM", $vo.getDescription());
+			c.addNullAttribute("Valor cobrado");
+			c.addNullAttribute("Valor calculado");
+			c.addNullAttribute("Volume utilizado");
+			c.addNullAttribute("Limite configurado");
+		
+			results.add(c);
+		}
+	}
+end
+
+
+rule "R34.2 - Not charged customer when it was supposed to"
+salience 80
+when
+
+	MegaTIMActivation ( $coid : contractId,
+						$vo : megaTIMVO )
+
+	ContractInfoSection ( contractNumber == $coid,
+						  $accNumber : accessNbr, 
+						  $rateplan : ratePlan )
+
+	Account ( $carrierState : carrierState,
+			  $carrierCode : carrierCode )
+	
+	not ( GroupItemReceiptDetail( OCC == true,
+			         			  $occDescription : caption -> ($occDescription.equals($vo.getOccDescription())) ) )
+		
+then
+	consequenceBuilder.setRule("R34-2","Benefícios da Promoção Mega TIM");
+	consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+	consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+	consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+	consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+	consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+	TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+	c.setDescription("A ativação da promoção Mega TIM não foi cobrada."); 
+
+	c.addAttribute("Número do contrato", $coid);
+	c.addAttribute("Número do acesso", $accNumber);
+	c.addAttribute("Plano", $rateplan);
+	c.addAttribute("Pacote MegaTIM", $vo.getDescription());
+	c.addNullAttribute("Valor cobrado");
+	c.addNullAttribute("Valor calculado");
+	c.addNullAttribute("Volume utilizado");
+	c.addNullAttribute("Limite configurado");
+
+	results.add(c);
+end
+
+rule "R34.2 - Charged customer but value is incorrect"
+salience 80
+when
+
+	MegaTIMActivation ( $coid : contractId,
+						$vo : megaTIMVO )
+
+	ContractInfoSection ( contractNumber == $coid,
+						  $accNumber : accessNbr, 
+						  $rateplan : ratePlan )
+
+	Account ( $carrierState : carrierState,
+			  $carrierCode : carrierCode )
+	
+	GroupItemReceiptDetail( OCC == true,
+						    $totalAmount : totalAmount,
+			           	    $occDescription : caption -> ($occDescription.equals($vo.getOccDescription())) )
+
+	Invoice ( $dtInit : cycleStartDate,
+			  $dtEnd  : cycleEndDate )
+		
+then
+	CustomerSituationVO vo = (CustomerSituationVO) customerSituationCache.getFromCache( CustomerSituationVO.createKey($coid) );
+	if (vo != null) {	
+	
+		boolean newCustomer = vo.isInPeriod($dtInit, $dtEnd);
+		double correctAmount = $vo.getNewCustomerFee();
+		if (!newCustomer) {
+			correctAmount = $vo.getCurrentCustomerFee();
+		}
+		
+		if (($totalAmount.doubleValue() != correctAmount) && (correctAmount > 0)) {		
+			consequenceBuilder.setRule("R34-2","Benefícios da Promoção Mega TIM");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+		
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription("Valor cobrado para a ativação não confere com o cadastrado."); 
+		
+			c.addAttribute("Número do contrato", $coid);
+			c.addAttribute("Número do acesso", $accNumber);
+			c.addAttribute("Plano", $rateplan);
+			c.addAttribute("Pacote MegaTIM", $vo.getDescription());
+			c.addDoubleAttribute("Valor cobrado", $totalAmount.doubleValue());
+			c.addDoubleAttribute("Valor calculado", correctAmount);
+			c.addNullAttribute("Volume utilizado");
+			c.addNullAttribute("Limite configurado");
+
+			results.add(c);
+		}
+	}
+end
+
+

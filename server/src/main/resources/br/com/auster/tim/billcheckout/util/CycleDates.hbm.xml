@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+  
+<!DOCTYPE hibernate-mapping PUBLIC
+        "-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+        "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
+
+<hibernate-mapping>
+
+		<class name="br.com.auster.tim.billcheckout.util.CycleDates"
+			table="BCK_PARM_CYCLE_DATES" mutable="false" lazy="false" batch-size="50">
+			
+			<cache usage="read-only" include="all"/>
+			
+			<id name="uid" column="OBJID" type="long" unsaved-value="0">
+				<generator class="sequence">
+					<param name="sequence">bck_dimensions_uid</param>
+				</generator>
+			</id>
+			
+			<property name="code" type="string" update="true" insert="true" column="CYCLE_CODE"
+				length="8" not-null="false"/>
+			
+			<property name="startDate" type="date" update="true" insert="true" column="START_DATE"
+				not-null="false"/>
+			
+			<property name="endDate" type="date" update="true" insert="true" column="END_DATE"
+				not-null="false"/>
+			
+			<property name="issueDate" type="date" update="true" insert="true" column="ISSUE_DATE"
+				not-null="false"/>
+			
+			<property name="refDate" type="date" update="true" insert="true" column="REF_DATE"
+				not-null="false"/>
+			
+			<property name="dueDate" type="date" update="true" insert="true" column="DUE_DATE"
+				not-null="false"/>
+			
+		</class>
+
+</hibernate-mapping>

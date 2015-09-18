@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+
+<config>
+	<sql:configuration xmlns:sql="http://www.auster.com.br/common/sql/">
+	    <sql:database name="sql/bscsdb">
+	    	<sql:statements path="conf/sql/fk-loader-sqls.xml"/>
+	    </sql:database>
+	    <sql:database name="sql/billcheckoutdb">
+	    	<sql:statements path="conf/sql/pre-loader-sqls.xml"/>
+	    	<sql:statements path="conf/sql/insert-loader-sqls.xml"/>
+	    	<sql:statements path="conf/sql/pos-loader-sqls.xml"/>
+	    	<sql:statements path="conf/sql/fk-loader-sqls.xml"/>
+	    </sql:database>
+	</sql:configuration>
+</config>

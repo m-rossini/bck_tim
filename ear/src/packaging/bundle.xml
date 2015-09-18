@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<project name="packaging" default="bundle" basedir="@[user.dir]@">
+
+	<target name="bundle">
+		<zip destfile="target/@[project.currentArtifact]@-@[project.currentVersion]@.zip">
+			<zipfileset file="target/@[tim:tim-billcheckout-ear]@"/>
+			<zipfileset file="@[log4j:log4j]@" prefix="ext"/>
+			<zipfileset file="@[minaret:datedFileAppender]@" prefix="ext"/>
+            <zipfileset dir="${basedir}/src/main/ext" includes="log4j.xml" prefix="ext"/>
+            <zipfileset dir="${basedir}/src/main/ext/jaas" prefix="jaas"/>
+            		<zipfileset dir="${basedir}/src/main/etc" prefix="etc"/>
+			<zipfileset dir="${basedir}/src/main/conf" prefix="ext/conf"/>
+		</zip>
+	</target>
+</project>

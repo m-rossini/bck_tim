@@ -1,0 +1,398 @@
+
+-injars "@[user.dir]@/target/classes"
+-injars "@[auster:auster-commons-base]@"(!br/com/auster/**/test/**,!br/com/auster/common/security/ResourceReady.class,!br/com/auster/common/mail/**)
+-injars "@[auster:auster-commons-data]@"(!br/com/auster/**/test/**)
+-injars "@[auster:auster-commons-asm]@"(!br/com/auster/**/test/**)
+-injars "@[auster:data-aware]@"(!br/com/auster/**/test/**)
+-injars "@[auster:udd]@"(!br/com/auster/**/test/**)
+-injars "@[tim:bgh-tools]@"(!br/com/auster/**/test/**)
+-injars "@[auster:billcheckout]@"(!br/com/auster/**/test/**,!br/com/auster/billcheckout/reqsender/**/*.class)
+-injars "@[auster:dware-console-listeners]@"(!br/com/auster/**/test/**)
+-injars "@[auster:om-filter]@"(!br/com/auster/**/test/**)
+-injars "@[auster:om-reference]@"(!br/com/auster/**/test/**)
+-injars "@[auster:om-invoice]@"(!br/com/auster/**/test/**)
+-injars "@[auster:om-util]@"(!br/com/auster/**/test/**)
+
+
+# Output file
+-outjars "@[tim:tim-billcheckout-server]@"
+
+#-libraryjars "@[auster:dware-console-plugins]@"
+-libraryjars "@[auster:auster-commons-base]@"(br/com/auster/common/security/ResourceReady.class)
+-libraryjars "@[ant:ant]@"
+-libraryjars "@[asm:asm]@"
+-libraryjars "@[commons-cli:commons-cli]@"
+-libraryjars "@[commons-collections:commons-collections]@"
+-libraryjars "@[commons-io:commons-io]@"
+-libraryjars "@[commons-lang:commons-lang]@"
+-libraryjars "@[log4j:log4j]@"
+-libraryjars "@[xalan:xalan]@"
+-libraryjars "@[commons-dbcp:commons-dbcp]@"
+-libraryjars "@[org.hibernate:hibernate]@"
+-libraryjars "@[org.drools:drools-core]@"
+-libraryjars "@[java.home]@/lib/rt.jar"
+
+# proguard debugging files/options
+# -printseeds proguard_seeds.txt
+# -printusage proguard_deadcode.txt
+-verbose
+
+# -dontobfuscate
+# -dontshrink
+# -dontoptimize
+-overloadaggressively
+
+# provides useful stack traces
+-printmapping proguard.mapping
+# -applymapping .proguard.mapping
+-renamesourcefileattribute SourceFile
+-keepattributes InnerClasses,SourceFile,LineNumberTable,Deprecated,Signature
+
+##################################################
+# SHARED KEEPS                                   #
+##################################################
+
+# Resource Bundles
+-keepclasseswithmembers class **.res.*
+
+-keep class * extends java.lang.Exception {
+	public <init>();
+	public <init>(**);
+}
+
+##################################################
+# OM-FILTER                                      #
+##################################################
+
+-keep class br.com.auster.om.filter.request.* {
+   public <methods>;
+}
+
+##################################################
+# COMMONS-BASE                                   #
+##################################################
+
+-keep class br.com.auster.common.stats.* {
+	public <methods>;
+	public static <methods>;
+}
+
+-keep class br.com.auster.common.security.Encryptor {
+	public static void main(java.lang.String[]);
+}
+
+-keep class br.com.auster.common.util.CommonsServicesBarCode {
+	public static <methods>;
+	public static <fields>;
+}
+
+-keep class br.com.auster.common.log.LogFactory {
+	public <methods>;
+}
+-keep class br.com.auster.common.datastruct.* {
+	public <methods>;
+}
+
+-keep interface br.com.auster.common.rules.RulesEngineProcessor
+-keep class * implements br.com.auster.common.rules.RulesEngineProcessor {
+   public <init>(**);
+   public <init>();
+}
+
+-keep class br.com.auster.common.sql.SecureDriverManagerConnectionFactory {
+	<init>(java.lang.String, java.lang.String, java.lang.String);
+	<init>(java.lang.String, java.util.Properties);
+}
+
+-keep class br.com.auster.common.lang.Named* {
+       *;
+}
+
+-keep class br.com.auster.common.rules.GlobalForLog {
+     public static <methods>;
+}
+
+-keep class br.com.auster.common.text.DateFormat {
+	public static <methods>;
+	public <methods>;
+}
+
+##################################################
+# COMMONS-DATA                                   #
+##################################################
+
+# Main interfaces
+-keep interface br.com.auster.common.data.DataSaver
+-keep class * implements br.com.auster.common.data.DataSaver
+-keep interface br.com.auster.common.data.DataRetriever
+-keep class * implements br.com.auster.common.data.DataRetriever
+-keep interface br.com.auster.common.data.AggregationEngine
+-keep class * implements br.com.auster.common.data.AggregationEngine
+
+# definition classes
+-keep class br.com.auster.common.data.definition.** {
+	public <methods>;
+}
+
+-keep interface br.com.auster.common.data.runtime.RecordInstance {
+	public <methods>;
+	public static <fields>;
+}
+-keep class br.com.auster.common.data.runtime.dm.*
+
+##################################################
+# COMMONS-ASM                                    #
+##################################################
+
+-keep class br.com.auster.common.asm.** {
+	public <methods>;
+}
+
+
+
+##################################################
+# UDD                                            #
+##################################################
+
+# UDD readers
+-keep class * extends br.com.auster.udd.reader.FlatNIOReader {
+    public <methods>;
+}
+
+# UDD Handlers
+-keep class * extends br.com.auster.udd.reader.TaggedFileReader {
+    <init>(org.w3c.dom.Element);
+    public <methods>;
+}
+
+##################################################
+# OM-REFERENCE                                   #
+##################################################
+
+# keep abstract parent classes for models
+-keep class br.com.auster.om.reference.* {
+    public <methods>;
+    public <fields>;
+}
+
+# keep model classes for reference tables
+-keep class br.com.auster.om.reference.model.* {
+    public <methods>;
+    public <fields>;
+}
+
+-keep interface br.com.auster.om.reference.facade.ReferenceFacades
+-keep class * implements br.com.auster.om.reference.facade.ReferenceFacades
+
+##################################################
+# OM-INVOICE                                     #
+##################################################
+
+# keep model classes for reference tables
+-keep class br.com.auster.om.invoice.InvoiceModelObject {
+	public *;
+}
+
+-keep class * extends br.com.auster.om.invoice.InvoiceModelObject {
+	public *;
+}
+
+##################################################
+# OM-UTILS                                       #
+##################################################
+
+# keep model classes for reference tables
+-keep class br.com.auster.om.util.UnitCounter {
+	*;
+}
+-keep class br.com.auster.om.util.ParserUtils {
+	*;
+}
+
+##################################################
+# BGH-TOOLS                                      #
+##################################################
+
+# keep model classes for reference tables
+-keep class br.com.auster.tim.om.invoice.* {
+    public <init>(**);
+	public <methods>;
+}
+
+-keep class br.com.auster.tim.bgh.sax.* {
+    public <init>(**);
+    public *;
+}
+
+
+##################################################
+# DATA-A-WARE                                    #
+##################################################
+
+# Data-A-Ware graph manager and remote interfaces
+-keep class **GraphManager
+-keep class **Stub
+-keep class **Tie
+
+# Data-A-Ware connectors
+-keep interface br.com.auster.dware.graph.Connector
+-keep class * implements br.com.auster.dware.graph.Connector
+
+# Data-A-Ware listeners
+-keep interface br.com.auster.dware.manager.QueueProcessedListener
+-keep class * implements br.com.auster.dware.manager.QueueProcessedListener {
+    public <init>(**);
+}
+
+-keep interface br.com.auster.dware.graph.FinishListener
+-keep class * implements br.com.auster.dware.graph.FinishListener {
+	public <init>(**);
+}
+
+-keep interface br.com.auster.dware.BootstrapListener
+-keep class * implements br.com.auster.dware.BootstrapListener {
+   public <init>(**);
+}
+
+-keep interface br.com.auster.dware.StartupListener
+-keep class * implements br.com.auster.dware.StartupListener {
+   public <init>(**);
+}
+
+-keep interface br.com.auster.dware.request.RequestErrorListener
+-keep class * implements br.com.auster.dware.request.RequestErrorListener {
+   public <init>(**);
+}
+
+ # Data-A-Ware checkpoints
+-keep class * extends br.com.auster.dware.manager.checkpoint.AbstractCheckpoint {
+    <init>();
+    <init>(**);
+    <init>(org.w3c.dom.Element,br.com.auster.dware.manager.DataAwareManagerMediator);
+}
+
+# All Data-A-Ware XSL Filters
+-keep public class * extends br.com.auster.dware.graph.Filter {
+    <init>(**);
+}
+-keep class * implements org.xml.sax.XMLReader {
+    <init>(**);
+}
+
+# Request interface
+-keep class br.com.auster.dware.graph.Request {
+   *;
+}
+
+-keep class * extends br.com.auster.dware.graph.Request {
+   *;
+}
+
+# All Request Filters
+-keep interface br.com.auster.dware.request.RequestFilter
+-keep public class * implements br.com.auster.dware.request.RequestFilter {
+    public <init>();
+    public <init>(java.util.Collection, boolean);
+}
+
+# All Request Builders
+-keep interface br.com.auster.dware.request.RequestBuilder
+-keep public class * implements br.com.auster.dware.request.RequestBuilder {
+    public <init>(java.lang.String,org.w3c.dom.Element);
+}
+
+# Tag Selector -->
+-keep public class br.com.auster.dware.sax.TagSelectorPipe {
+    public <init>(org.w3c.dom.Element);
+}
+-keep public class br.com.auster.dware.sax.TagDropperPipe {
+    public <init>(org.w3c.dom.Element);
+}
+
+-keep interface br.com.auster.dware.RemoteBootstrap {
+	public <methods>;
+}
+-keep class * implements br.com.auster.dware.RemoteBootstrap
+
+# Data-A-Ware queues
+-keep class * implements br.com.auster.dware.manager.ReqForwarderInterface {
+    public <init>(**);
+}
+
+-keep class br.com.auster.dware.manager.FIFOQueueReqForwarder {
+     public <init>(**);
+}
+
+-keep interface br.com.auster.dware.sax.MultiHandlerReceiver
+-keep class * implements br.com.auster.dware.sax.MultiHandlerReceiver
+
+
+##################################################
+# BILLCHECKOUT CORE                              #
+##################################################
+
+-keep interface br.com.auster.billcheckout.listeners.BillcheckoutQueueListenerInterface {
+        public protected *;
+}
+
+-keep public class * implements br.com.auster.billcheckout.listeners.BillcheckoutQueueListenerInterface {
+        public protected *;
+}
+
+-keep class br.com.auster.billcheckout.utils.DeleteWebRequestBatch {
+    public static void main(java.lang.String[]);
+}
+
+
+-keep class br.com.auster.billcheckout.consequence.* {
+    public *;
+}
+
+-keep class br.com.auster.billcheckout.consequence.telco.* {
+    public <methods>;
+}
+
+-keep class br.com.auster.billcheckout.ruleobjects.* {
+    public <methods>;
+}
+
+-keep class * implements org.hibernate.usertype.UserType
+
+-keep class br.com.auster.billcheckout.model.* {
+   public <methods>;
+   public static <fields>;
+}
+
+-keep class br.com.auster.billcheckout.thresholds.* {
+   public <methods>;
+   public static <fields>;
+}
+
+-keep class br.com.auster.billcheckout.rules.duplicity.UsageHandler {
+   public <methods>;
+}
+
+-keep class br.com.auster.billcheckout.rules.duplicity.DuplicityContentHandlerFilter {
+   public <methods>;
+}
+
+-keep class br.com.auster.billcheckout.caches.* {
+   public <methods>;
+}
+##################################################
+# TIM CUSTOM BILLCHECKOUT                        #
+##################################################
+
+-keep class br.com.auster.tim.billcheckout.util.* {
+       *;
+}
+
+-keep class br.com.auster.tim.billcheckout.** {
+    public *;
+}
+
+-keep class br.com.auster.tim.billcheckout.rules.duplicity.* {
+   public <methods>;
+}
+
+

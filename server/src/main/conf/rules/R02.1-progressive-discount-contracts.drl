@@ -1,0 +1,284 @@
+#created on: 11/04/2008
+package br.com.auster.tim.billchekout
+
+#list any import classes here.
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.tim.om.invoice.PromotionPackageReceiptDetail;
+import br.com.auster.tim.om.invoice.PromotionPackageDiscount;
+import br.com.auster.tim.om.invoice.UsagePromotionDetail;
+import br.com.auster.tim.om.invoice.ContractTotalsDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.common.rules.GlobalForLog;
+import br.com.auster.tim.billcheckout.param.ProgressiveDiscountVO;
+import br.com.auster.tim.billcheckout.util.NamedBigDecimal;
+import java.math.BigDecimal;
+import br.com.auster.common.lang.NamedDouble;
+
+#declare any global variables here
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global br.com.auster.tim.billcheckout.param.ProgressiveDiscountCache progressiveDiscountCache;
+global java.util.List results;
+
+
+/**
+ * (STEP 1) Asserting the progressive discount VO in the WM for each promotion package in the invoice
+ */
+rule "R02.1 - Contracts - Asserting ProgDisc and Init Variables"
+	salience 90
+
+	when
+
+		Account ( $carrierState : carrierState )
+
+		PromotionPackageReceiptDetail ( $caption : caption )
+
+	then
+
+		ProgressiveDiscountVO progressiveDiscountVO = (ProgressiveDiscountVO) progressiveDiscountCache.getFromCache(ProgressiveDiscountVO.createAlternateKey($caption, $carrierState));
+		if (progressiveDiscountVO == null) {
+			progressiveDiscountVO = (ProgressiveDiscountVO) progressiveDiscountCache.getFromCache(ProgressiveDiscountVO.createAlternateKey($caption, null));
+		}
+
+		if (progressiveDiscountVO != null) {
+			if (progressiveDiscountVO.getShdes() == null || progressiveDiscountVO.getShdes().trim().equals("")) {
+				assert(new NamedDouble("R02.1_ContractSubscription_"+progressiveDiscountVO.getDiscountDesc()+"_qty", 0));
+				assert(new NamedBigDecimal("R02.1_ContractSubscription_"+progressiveDiscountVO.getDiscountDesc()+"_totalAmnt", new BigDecimal("0")));
+			} else {
+				assert(new NamedBigDecimal("R02.1_UsagePromotionPackage_"+progressiveDiscountVO.getDiscountDesc()+"_totalBefDiscAmnt", new BigDecimal("0")));
+				assert(new NamedBigDecimal("R02.1_UsagePromotionPackage_"+progressiveDiscountVO.getDiscountDesc()+"_totalDiscAmnt", new BigDecimal("0")));
+			}
+			assert(progressiveDiscountVO);
+
+		}
+
+end
+
+
+/*
+ * (STEP 2) Sum and accumulate the number of contracts for each promotion, by rate plan
+ */
+rule "R02.1 - Contracts - Sum number of ContractSubscription events"
+	salience 80
+
+	when
+
+		ContractInfoSection ( $contractNumber : contractNumber,
+		                      $rateplan : ratePlan
+		                    )
+
+		ProgressiveDiscountVO ( shdes == null,
+								$discountDesc : discountDesc,
+								allowedPlans contains $rateplan
+							  )
+
+		ContractTotalsDetail ( tag == "60000000",
+		                       contractNumber == $contractNumber
+		                      )
+
+		$ndAcc : NamedDouble( $nameAcc : name -> ($nameAcc.equals("R02.1_ContractSubscription_"+$discountDesc+"_qty")) )
+
+	then
+		GlobalForLog.log("INFO", "Adding another contract for " + $discountDesc);
+		$ndAcc.addTo(1);
+end
+
+
+/*
+ * (STEP 2) Sum the subscription amount applying the discount rate.
+ */
+rule "R02.1 - Contracts - Sum the ContractSubscription amount"
+	salience 70
+
+	when
+
+		$disc : PromotionPackageDiscount ( $discRate : discountRate )
+
+		PromotionPackageReceiptDetail ( $caption : caption,
+										promotionPackageDiscountList contains $disc )
+
+		ContractInfoSection ( $contractNumber : contractNumber,
+		                      $rateplan : ratePlan
+		                    )
+
+		$progDisc : ProgressiveDiscountVO ( shdes == null,
+							   	            $discountDesc : discountDesc -> ($discountDesc.equalsIgnoreCase($caption)),
+								            allowedPlans contains $rateplan
+							              )
+
+		ContractTotalsDetail ( tag == "60000000",
+		                       contractNumber == $contractNumber,
+		                       $totalAmount : totalAmount
+		                      )
+
+		$ndAcc : NamedDouble( $nameAcc : name -> ($nameAcc.equals("R02.1_ContractSubscription_"+$discountDesc+"_qty")) )
+
+		$ndSum : NamedBigDecimal( $nameSum : name -> ($nameSum.equals("R02.1_ContractSubscription_"+$discountDesc+"_totalAmnt")) )
+
+	then
+		GlobalForLog.log("INFO", "Checking " + $discountDesc + " with " + $ndAcc.getValue() + " contracts");
+		// only checks if discount rate in database > 0
+		//        and discount rate in database equas discount rate in the invoice
+		GlobalForLog.log("INFO", "Rate should be " + $progDisc.getSpecificDiscRate($ndAcc.getValue()));
+		if(($progDisc.getSpecificDiscRate($ndAcc.getValue()) > 0) &&
+				(Math.abs(((int)($progDisc.getSpecificDiscRate($ndAcc.getValue())*100))-((int)($discRate.doubleValue()*100))) < 1)) {
+
+			// getting discount rate in database
+			BigDecimal discRate = new BigDecimal(String.valueOf($progDisc.getSpecificDiscRate($ndAcc.getValue())));
+			// since its expressed as X % we need to divide by 100, to format it as 0.X
+			discRate = discRate.divide(new BigDecimal(String.valueOf(100)).setScale(2,BigDecimal.ROUND_DOWN));
+			// now amount * rate in 0.X format, trunc to 2 decimals
+			discRate = discRate.multiply(new BigDecimal(String.valueOf($totalAmount.doubleValue())).setScale(2,BigDecimal.ROUND_DOWN));
+
+			$ndSum.addTo(discRate.setScale(2,BigDecimal.ROUND_DOWN).doubleValue());
+		}
+
+end
+
+
+/*
+ * (STEP 3) Get the discount rate in the database and check if its OK. If it is not, or if the rate cannot be found, a consequence will be created.
+ */
+rule "R02.1 - Contracts - Get the ContractSubscription discRate"
+	salience 60
+
+	when
+		$disc : PromotionPackageDiscount ( $discRate : discountRate )
+
+		PromotionPackageReceiptDetail ( $caption : caption,
+										promotionPackageDiscountList contains $disc )
+
+		$progDisc : ProgressiveDiscountVO ( shdes == null,
+											$discountDesc : discountDesc -> ($discountDesc.equalsIgnoreCase($caption)) )
+
+		$ndAcc : NamedDouble( $nameAcc : name -> ($nameAcc.equals("R02.1_ContractSubscription_"+$discountDesc+"_qty")) )
+
+		Account ( $carrierCode : carrierCode )
+
+	then
+
+		double discRate = $progDisc.getSpecificDiscRate($ndAcc.getValue());
+		if(discRate < 0) {
+			// rate not found
+			consequenceBuilder.setRule("R02-1","Validação desconto progressivo");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+			c.setDescription("Percentual de desconto não encontrado na Base.");
+			c.addAttribute("Nome do Pacote/Serviço", $discountDesc);
+			c.addDoubleAttribute("Valor Base para Desconto", $ndAcc.getValue());
+			c.addAttribute("Medida Usada com Base", "Assinaturas");
+			c.addDoubleAttribute("Percentual de Desconto na Fatura", $discRate.doubleValue());
+			c.addNullAttribute("Percentual de Desconto Esperado");
+			c.addNullAttribute("Valor de Descontos na Fatura");
+			c.addNullAttribute("Valor de Descontos Calculado");
+
+			results.add(c);
+
+		} else {
+			// rate found. Checking if they are equal
+			int diff = ((int) $progDisc.getSpecificDiscRate($ndAcc.getValue())*100) - ((int)($discRate.doubleValue()*100));
+			if (Math.abs(diff) >= 1) {
+				// rate in invoice not equal to the one calculated
+				consequenceBuilder.setRule("R02-1","Validação desconto progressivo");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+				c.setDescription("Percentual de desconto não confere com o cadastrado na Base.");
+				c.addAttribute("Nome do Pacote/Serviço", $discountDesc);
+				c.addDoubleAttribute("Valor Base para Desconto", $ndAcc.getValue());
+				c.addAttribute("Medida Usada com Base", "Assinaturas");
+				c.addDoubleAttribute("Percentual de Desconto na Fatura", $discRate.doubleValue());
+				c.addDoubleAttribute("Percentual de Desconto Esperado", discRate);
+				c.addNullAttribute("Valor de Descontos na Fatura");
+				c.addNullAttribute("Valor de Descontos Calculado");
+
+				results.add(c);
+			}
+		}
+
+
+
+end
+
+
+/*
+ * (STEP 3) Validate the discount amount for ContractSubscription.
+ */
+rule "R02.1 - Contracts - Validate the amount for ContractSubscription"
+	salience 60
+
+	when
+
+		$disc : PromotionPackageDiscount ( $discRate : discountRate,
+								   		   $totalDiscountAmount : totalDiscountAmount )
+
+		PromotionPackageReceiptDetail ( $caption : caption,
+										promotionPackageDiscountList contains $disc )
+
+		$progDisc : ProgressiveDiscountVO ( shdes == null,
+											$discountDesc : discountDesc -> ($discountDesc.equalsIgnoreCase($caption)) )
+
+		$ndAcc : NamedDouble( $nameAcc : name -> ($nameAcc.equals("R02.1_ContractSubscription_"+$discountDesc+"_qty")) )
+
+		$ndSum : NamedBigDecimal( $nameSum : name -> ($nameSum.equals("R02.1_ContractSubscription_"+$discountDesc+"_totalAmnt")) )
+
+		Account ( $carrierCode : carrierCode )
+
+	then
+
+		double dbDiscRate = $progDisc.getSpecificDiscRate($ndAcc.getValue());
+		BigDecimal discRateDiff = new BigDecimal(String.valueOf(dbDiscRate));
+		// discRateDiff = dbDiscRate - $discRate.doubleValue(), rounded down to scale 2
+		discRateDiff = discRateDiff.subtract(new BigDecimal(String.valueOf($discRate.doubleValue())).setScale(2,BigDecimal.ROUND_DOWN));
+		// if we found a discount rate,
+		//     the rate from database and on the invoice are the same
+		//     but the amounts are different, then build a consequence
+		if((dbDiscRate >= 0) &&
+				(Math.abs(discRateDiff.doubleValue()) < 0.01) &&
+				(Math.abs($ndSum.subtractFrom(Math.abs($totalDiscountAmount.doubleValue()))) > 0.01)) {
+
+			consequenceBuilder.setRule("R02-1","Validação desconto progressivo");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+			c.setDescription("Valor de desconto não confere com o calculado.");
+			c.addAttribute("Nome do Pacote/Serviço", $discountDesc);
+			c.addDoubleAttribute("Valor Base para Desconto", $ndAcc.getValue());
+			c.addAttribute("Medida Usada com Base", "Assinaturas");
+			c.addDoubleAttribute("Percentual de Desconto na Fatura", $discRate.doubleValue());
+			c.addDoubleAttribute("Percentual de Desconto Esperado", dbDiscRate);
+			c.addDoubleAttribute("Valor de Descontos na Fatura", Math.abs($totalDiscountAmount.doubleValue()));
+			c.addDoubleAttribute("Valor de Descontos Calculado", $ndSum.getValue().doubleValue());
+
+			results.add(c);
+
+		}
+
+end
+

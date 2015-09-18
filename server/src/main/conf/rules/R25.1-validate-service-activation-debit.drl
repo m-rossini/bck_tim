@@ -1,0 +1,224 @@
+#created on: 25/10/2007
+package br.com.auster.tim.billchekout
+
+#list any import classes here.
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Receipt;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.billcheckout.param.ContractServicesVO;
+import br.com.auster.tim.billcheckout.param.ServicesByContractVO;
+import br.com.auster.tim.billcheckout.param.ServicesVO;
+import br.com.auster.tim.billcheckout.param.MpulktmbVO;
+import br.com.auster.tim.billcheckout.param.MpulkpvbVO;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Date;
+import java.text.SimpleDateFormat;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+import br.com.auster.tim.billcheckout.tariff.CachedServiceRatesVO;
+import br.com.auster.tim.billcheckout.tariff.ServiceRatesVO;
+
+#declare any global variables here
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.tim.billcheckout.param.ServicesCache servicesCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global br.com.auster.tim.billcheckout.param.MpulktmbCache mpulktmbCache;
+global br.com.auster.tim.billcheckout.param.MpulkpvbCache mpulkpvbCache;
+global br.com.auster.tim.billcheckout.param.ContractServicesDAO contrServicesDAO;
+global br.com.auster.tim.billcheckout.tariff.ServiceRatesCache serviceRatesCache;
+global java.util.List results;
+
+
+rule "Regra 25.1 - Asserting the services"
+
+	salience 90
+
+	when
+
+		$invoice : Invoice ( $cycleStartDate : cycleStartDate != null,
+							 $cycleEndDate : cycleEndDate != null
+						   )
+
+		$cif : ContractInfoSection ( $contractNumber : contractNumber,
+		                             $ratePlan : ratePlan )
+
+		$account : Account( $carrierCode : carrierCode,
+							$carrierState : carrierState
+		 		  		  )
+
+	then
+
+		//obter lista de services para um contract
+		List contractServicesList = contrServicesDAO.getContractServicesList(ContractServicesVO.createKey($contractNumber));
+		ContractServicesVO contractServicesVO;
+		MpulktmbVO mpulktmb;
+		MpulkpvbVO mpulkpvb = null;
+
+		ServicesByContractVO service;
+		GlobalForLog.log("DEBUG", "Loaded services for contract " + $contractNumber);
+		if ((contractServicesList != null) && (contractServicesList.size() > 0)) {
+			for (Iterator iter = contractServicesList.iterator(); iter.hasNext();) {
+				contractServicesVO = (ContractServicesVO) iter.next();
+				GlobalForLog.log("DEBUG", "Checking service " + contractServicesVO.getSnCode());
+
+				if (contractServicesVO.getActivationDate() == null) { continue; }
+				if ($cycleStartDate.before(contractServicesVO.getActivationDate()) && $cycleEndDate.after(contractServicesVO.getActivationDate())) {
+					GlobalForLog.log("DEBUG", "Service " + contractServicesVO.getSnCode() + " activated during cycle. Checking subscript configuration");
+
+					double subscript = 0.0;
+					
+					CachedServiceRatesVO cachedVo = (CachedServiceRatesVO) 
+									serviceRatesCache.getFromCache( 
+												CachedServiceRatesVO.createKey(contractServicesVO.getServiceShDes(), $ratePlan, $carrierState) );
+					
+					if (cachedVo == null) {
+						GlobalForLog.log("DEBUG", " No record found for this tariff :" + contractServicesVO.getServiceShDes() + "/" + $ratePlan + "/" + $carrierState);
+						continue;
+					}
+					ServiceRatesVO rate = cachedVo.getService( $cycleEndDate );
+					if ( (rate != null) && (rate.getSubscriptionFee() > 0.0) ) {					
+						GlobalForLog.log("DEBUG", "Service " + contractServicesVO.getSnCode() + " has subscript charge: "+ rate.getSubscriptionFee() + " / OCC should be " + cachedVo.getServiceDescription());
+						
+						ServicesVO servicesVO = null;
+						try{
+							servicesVO = (ServicesVO)servicesCache.getFromCache(ServicesVO.createKey(Long.parseLong(contractServicesVO.getSnCode())));
+						} catch(NumberFormatException e) { // do nothing
+						}
+						
+						if (servicesVO == null) {
+
+							consequenceBuilder.setRule("R25-1","Cobrança taxa de adesão");
+							consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+							consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+							consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+							consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+							consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+							TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+							c.setDescription("Não foi possível encontrar a descrição do serviço ativado.");
+							c.addAttribute("Número do Contrato", $contractNumber);
+							c.addNullAttribute("Nome do Serviço");
+							c.addAttribute("Código do Serviço", contractServicesVO.getSnCode());
+							c.addDateAttribute("Data de Ativação", contractServicesVO.getActivationDate());
+							c.addDateAttribute("Data de Vencimento", contractServicesVO.getExpirationDate());
+							c.addNullAttribute("Valor da OCC");
+							c.addNullAttribute("Valor de Referência");
+
+							results.add(c);
+
+						} else {
+						
+							service = new ServicesByContractVO(cachedVo.getServiceDescription(), contractServicesVO.getServiceShDes(), 
+							                                   Long.parseLong(contractServicesVO.getSnCode()), rate.getServiceUid());
+							service.setActivationDate(contractServicesVO.getActivationDate());
+							service.setExpirationDate(contractServicesVO.getExpirationDate());
+							service.setContractNumber($contractNumber);
+							service.setSubscriptionAmount(rate.getSubscriptionFee());
+							assert(service);
+						}
+					}
+				}
+			}
+		} else {
+			GlobalForLog.log("DEBUG", "Could not load Service list");
+		}
+
+end
+
+
+rule "Regra 25.1 - Validating the OCC section"
+
+	salience 80
+
+	when
+
+		$service : ServicesByContractVO ( $description : description )
+
+		not ( GroupItemReceiptDetail ( OCC == true,
+								       $occDesc : caption -> ( $occDesc.equalsIgnoreCase($description) )
+							   )
+			)
+
+		$account : Account( $carrierCode : carrierCode,
+							$carrierState : carrierState
+		 		  		  )
+
+	then
+		GlobalForLog.log("DEBUG", "There is no charge for service " + $service.getSvcCode());
+
+		consequenceBuilder.setRule("R25-1","Cobrança taxa de adesão");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+		c.setDescription("Não foi encontrada taxa de adesão para o serviço ativado.");
+		c.addAttribute("Número do Contrato", $service.getContractNumber());
+		c.addAttribute("Nome do Serviço", $service.getDescription());
+		c.addLongAttribute("Código do Serviço", $service.getSvcCode());
+		c.addDateAttribute("Data de Ativação", $service.getActivationDate());
+		c.addDateAttribute("Data de Vencimento", $service.getExpirationDate());
+		c.addNullAttribute("Valor da OCC");
+		c.addDoubleAttribute("Valor de Referência", $service.getSubscriptionAmount());
+
+		results.add(c);
+
+end
+
+rule "Regra 25.1 - Validating the OCC value"
+
+	salience 80
+
+	when
+
+		$service : ServicesByContractVO ( $description : description,
+		                                  $amount : subscriptionAmount )
+
+		GroupItemReceiptDetail ( OCC == true,
+						         $occDesc : caption -> ( $occDesc.equalsIgnoreCase($description) ),
+						         $occAmount : totalAmount != $amount
+							   )
+
+		$account : Account( $carrierCode : carrierCode,
+							$carrierState : carrierState
+		 		  		  )
+
+	then
+		
+		consequenceBuilder.setRule("R25-1","Cobrança taxa de adesão");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+		c.setDescription("Valor cobrado na adesão diferente do configurado para este serviço");
+		c.addAttribute("Número do Contrato", $service.getContractNumber());
+		c.addAttribute("Nome do Serviço", $service.getDescription());
+		c.addLongAttribute("Código do Serviço", $service.getSvcCode());
+		c.addDateAttribute("Data de Ativação", $service.getActivationDate());
+		c.addDateAttribute("Data de Vencimento", $service.getExpirationDate());
+		c.addDoubleAttribute("Valor da OCC", $occAmount.doubleValue());
+		c.addDoubleAttribute("Valor de Referência", $amount.doubleValue());
+
+		results.add(c);
+
+end

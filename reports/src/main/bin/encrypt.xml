@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<project name="auster-billcheckout" default="crypt.run">
+
+    <property environment="env"/>
+
+    <target name="crypt.run">
+		 <path id="run.classpath">
+		   <fileset dir="${basedir}/lib" includes="*"/>
+		 </path>
+		 <java classname="br.com.auster.common.security.Encryptor"
+			   fork="yes"
+			   dir="${basedir}">
+			<arg line="${cmdline.args}"/>
+			<classpath>
+			   <path refid="run.classpath"/>
+			</classpath>
+		 </java>
+	</target>
+    
+</project>

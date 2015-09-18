@@ -1,0 +1,13 @@
+LOAD DATA
+BADFILE 'log/ratetimezone.bad'
+DISCARDFILE 'log/ratetimezone.dsc'
+APPEND
+INTO TABLE QLF_RATE_TIME_ZONE
+FIELDS TERMINATED BY ","
+( 
+ 	OBJID 					EXPRESSION "seq1.nextval", 
+	TTCODE					position(1:2048) "loader.word(:ttcode,5,';')",
+	DESCRIPTION 		position(1:1) "loader.word(:ttcode,6,';')",
+	SHORT_DESC 			position(1:1) "loader.word(:ttcode,7,';')",
+	BILL_FILE_CODE	position(1:1) "loader.word(:ttcode,8,';')"
+)

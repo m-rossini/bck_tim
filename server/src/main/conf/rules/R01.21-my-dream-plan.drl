@@ -1,0 +1,227 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.DimensionCache;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.UsageFUDetail;
+import br.com.auster.tim.om.invoice.FreeUnitsReceiptDetail;
+
+import br.com.auster.common.lang.NamedHashMap;
+import br.com.auster.om.util.ParserUtils;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Date;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+import br.com.auster.tim.billcheckout.tariff.MyDreamRatesVO;
+import br.com.auster.billcheckout.caches.CacheableKey;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global br.com.auster.tim.billcheckout.tariff.MyDreamRatesCache myDreamCache;
+global java.util.List results;
+
+/** Inicia o acumulador das durações das chamadas consideradas para o plano Meu Sonho, por contrato **/
+rule "R01-21 - Create Acumulator"
+	salience 90
+	when
+		not ( NamedHashMap( name == "acumulator" ) )
+	then
+		assert(new NamedHashMap("acumulator"));
+end
+
+/** Verifica se uma chamada esta dentro do periodo de vigencia do pacote no ciclo **/
+function boolean isCallIntoPeriod(TIMUsageDetail _detail, FreeUnitsReceiptDetail _freeDetail){
+	if (_detail == null || _freeDetail == null) { return false; }
+	else {
+		return ( _detail.getUsageDate().compareTo(_freeDetail.getStartDate()) >= 0 && 
+				 _detail.getUsageDate().compareTo(_freeDetail.getEndDate()) <= 0 );
+	}
+}
+
+/** Somatória de durção arredondada de todas Chamadas Locais realizadas, recebidas a cobrar e Caixa Postal.
+	Sendo uma chamada com FreeUnits, verifica-se a sua descrição para poder contabilizar.
+**/
+rule "R01-21 - Acumulator For Calls Voice"
+	salience 80
+	when
+		$frd :FreeUnitsReceiptDetail( tag == "34000100",
+									  $contractNumber : contractNumber,
+									  $fuPackageName : serviceId -> ($fuPackageName.contains("Meu Sonho"))
+									)
+	
+		$usage : TIMUsageDetail ( voiceUsage  == true, //é uma chamada de voz
+								  microCellDesc == null, //microCellShortDescription //não é microcélula
+								  discountAmount < 0.001, //promotionsDiscAmount //verifica se houve desconto!?
+								  $totalAmount : totalAmount, //amountAfterPromotionsDisc
+								  $amountBefore : amountBeforePromotions != null, //amountBeforePromotionsDisc //verifica se houve desconto!?
+								  $cspBGH : carrierCode -> ("41".equals($cspBGH) || "0".equals($cspBGH)), //co-billing
+								  $duration : roundedDuration -> (($duration != null) && ($duration.getUnits() > 0)),//sinal de que identificou que tem um valor e é do tipo voz
+								  $ratePlan   : ratePlan -> ($ratePlan.startsWith("Plano Meu Sonho")),
+								  $freeUnitDetails : freeUnitDetails, //tag 51110020
+								  contractNumber == $contractNumber
+		                        )
+		$acumulator : NamedHashMap( name == "acumulator" )
+		$account : Account( $carrierCode : carrierCode )
+		eval (isCallIntoPeriod($usage, $frd))
+		eval ($usage.isLocalCall() || "*100".equals($usage.getCalledNumber())) //chamada local ou Caixa Postal
+		eval ($totalAmount.doubleValue() == $amountBefore.doubleValue()) //verifica se não houve desconto de Promocao
+	then
+		//GlobalForLog.log("INFO", "fired for call " + $usage.getDatetime());
+		//Se for uma chamada local sem franquia, contabiliza todas
+		if ("N".equals($usage.getFreeUnitIndicator())){
+			if (!$acumulator.containsKey($usage.getContractNumber())){
+				$acumulator.put($usage.getContractNumber(), new Double($duration.getUnits()));
+			}
+			else{
+				double value = ((Double) $acumulator.get($usage.getContractNumber())).doubleValue() + $duration.getUnits();
+				$acumulator.put( $usage.getContractNumber(), new Double(value) );
+			}
+		}
+		//Chamadas com aplicação de franquia, seja P-Parcial ou F-Free. Verifica a descrição do pacote.
+		if (!"N".equals($usage.getFreeUnitIndicator()) && $freeUnitDetails != null){
+			Iterator it = $freeUnitDetails.iterator();
+			while (it.hasNext()) {
+				UsageFUDetail fuDetailInfo = (UsageFUDetail) it.next();
+				String packageDescr = fuDetailInfo.getPackageLongDescription();
+				//Se conter texto "Meu Sonho" no nome do pacote, contabiliza seus minutos
+				if (packageDescr!=null && packageDescr.contains("Meu Sonho")) {
+					if (!$acumulator.containsKey($usage.getContractNumber())){
+						$acumulator.put($usage.getContractNumber(), new Double($duration.getUnits()));
+					}
+					else{
+						double value = ((Double) $acumulator.get($usage.getContractNumber())).doubleValue() + $duration.getUnits();
+						$acumulator.put( $usage.getContractNumber(), new Double(value) );
+					}
+				}
+			}
+		}
+end
+
+/** Verifica em qual pacote sera aplicado tarifação para as chamadas, no acumulado do contrato **/
+function String verifyPackage(double acumulator){
+	double durationSeconds = acumulator;
+	double pack250 = 250*60; //qtdade de 250 mins. em segundos
+	double pack500 = 500*60; //qtdade de 500 mins. em segundos
+	//GlobalForLog.log("INFO", "Somados " + acumulator + "secs");
+	if (durationSeconds < pack250){
+		//GlobalForLog.log("INFO", "Should be 125");
+		return "Pacote Ideal = Meu Sonho 125";
+	}else{
+		if (durationSeconds < pack500){
+			//GlobalForLog.log("INFO", "Should be 250");
+			return "Pacote Ideal = Meu Sonho 250";
+		}
+	}
+	//GlobalForLog.log("INFO", "Should be 500");
+	return "Pacote Ideal = Meu Sonho 500";
+}
+
+/* Compara os valores calculados e cobrados */
+function boolean isChargedAmountIncorrect_R01_21(Double _totalAmount, double calculatedAmount) {
+	double result = Math.abs( Math.abs(calculatedAmount) - Math.abs(_totalAmount.doubleValue()) );
+	if (result > 0.010001) {
+		// Differences greater then 0.010001 are automatically set as errors
+		return true;
+	} 
+	else if (result > 0.007) {
+		String strCalculated = ParserUtils.asDoubleString(Math.abs(calculatedAmount));
+		String strAmount = ParserUtils.asDoubleString(Math.abs(_totalAmount.doubleValue()));	
+		#evita de dar exception ao usar substring(0,4)
+		#evita critica indevida quando comparava 0.3 com 0.30 no formato string
+		if (strCalculated.length() < 4){
+			int x = 4 - strCalculated.length();
+			for (int i=0; i < x; i++){
+				strCalculated = strCalculated.concat("0");
+			}
+		}
+		if (strAmount.length() < 4){
+			int x = 4 - strAmount.length();
+			for (int i=0; i < x; i++){
+				strAmount = strAmount.concat("0");
+			}
+		}
+		// This condition is to validate rounding problems. If difference is greater then 0.007
+		// but bellow 0.010001, then let's check the string version of each value.
+		// Comparação assim feita, devido ao arredondamento de truncar a segunda casa decimal no totalAmount do BGH
+		return (! strCalculated.substring(0,4).equals(strAmount.substring(0,4)) );
+	}
+	return false;
+}
+
+/** Validação de tarifa para todas Chamadas Locais originadas, com Plano Meu Sonho **/
+rule "R01-21 - Rate Amount For Calls Voice"
+	salience 70
+	when
+		$usage : TIMUsageDetail ( voiceUsage  == true, //é uma chamada de voz
+								  localCall == true, //somente chamadas locais
+								  freeUnitIndicator == "N", //freeUnitIndicator //não é franquia
+								  microCellDesc == null, //microCellShortDescription //não é  microcélula
+								  discountAmount < 0.001, //promotionsDiscAmount //verifica se houve desconto!?
+								  $totalAmount : totalAmount, //amountAfterPromotionsDisc
+								  $amountBefore : amountBeforePromotions != null, //amountBeforePromotionsDisc //verifica se houve desconto!?
+								  $cspBGH : carrierCode -> ("41".equals($cspBGH) || "0".equals($cspBGH)), // Rede TIM - verifica se co-billing (ver guiding.drl)!?
+								  $duration : roundedDuration -> (($duration != null) && ($duration.getUnits() > 0)),//sinal de que identificou que tem um valor e é do tipo voz
+								  $ratePlan   : ratePlan -> ($ratePlan.startsWith("Plano Meu Sonho")),
+								  $dateOfCall : datetime,
+								  type != "AC", type != "AD", type != "DSL", type != "VCR", //restringe recebidas
+								  $tz : tariff,
+		                          $contractNumber : contractNumber
+		                        )
+		$frd :FreeUnitsReceiptDetail( tag == "34000100",
+									  contractNumber == $contractNumber,	
+									  $fuPackageName : serviceId -> ($fuPackageName.contains("Meu Sonho"))
+									)
+		$acumulator : NamedHashMap ( name == "acumulator" )
+		
+		$account : Account( $carrierCode : carrierCode,
+		                    $accountState : accountState )
+		
+		eval (isCallIntoPeriod($usage, $frd))
+		eval ($totalAmount.doubleValue() == $amountBefore.doubleValue()) //verifica se houve desconto de Promocao!?
+	then
+	double consumed = 0.0;
+	if($acumulator.containsKey($usage.getContractNumber())){
+		consumed = ((Double)$acumulator.get($usage.getContractNumber())).doubleValue();
+	}
+	String pack = verifyPackage(consumed); //pacote que será considerado
+	MyDreamRatesVO rate = (MyDreamRatesVO) myDreamCache.getFromCache(  MyDreamRatesVO.createKey($tz, $accountState, pack) );
+	
+	if (rate != null){
+		double calculatedAmount = $duration.getMinutes() * rate.getPPM();
+		if ( isChargedAmountIncorrect_R01_21($totalAmount, calculatedAmount) ){
+				consequenceBuilder.setRule("R01-21","Tarifação de Meu Sonho");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+		
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+				c.setDescription("O valor cobrado neste evento não condiz com a tarifa especificada.");
+				c.addAttribute("Número Origem", $usage.getChannelId());
+				c.addAttribute("Número Destino", $usage.getCalledNumber());
+				c.addDateTimeAttribute("Data/Hora", $usage.getDatetime());
+				c.addAttribute("Duração Cobrada", $duration);
+				c.addAttribute("Plano", $usage.getRatePlan());
+				c.addAttribute("Pacote", pack);
+				c.addAttribute("Serviço", $usage.getServiceDescription());
+				c.addAttribute("Zona Tarifária", $tz);
+				c.addDoubleAttribute("Valor cobrado", $totalAmount.doubleValue());
+				c.addDoubleAttribute("Valor esperado", calculatedAmount);
+			
+				results.add(c);
+		}
+	}
+end

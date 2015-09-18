@@ -1,0 +1,736 @@
+<?xml version = "1.0" encoding="UTF-8"?>
+<data-aware>
+	<log4j:configuration xmlns:log4j="http://jakarta.apache.org/log4j/">
+		<appender name="FILE" class="biz.minaret.log4j.DatedFileAppender">
+			<param name="Threshold" value="DEBUG" />
+			<param name="Directory" value="/stage/tim/billcheckout/log" />
+			<param name="Prefix" value="server-" />
+			<param name="Suffix" value=".log" />
+			<param name="Append" value="false" />
+			<layout class="org.apache.log4j.PatternLayout">
+				<param name="ConversionPattern" value="%d{ABSOLUTE} %-5p [(%c{1}) %t] %m%n" />
+			</layout>
+		</appender>
+
+		<root>
+			<priority value="INFO" />
+			<appender-ref ref="FILE" />
+		</root>
+	</log4j:configuration>
+
+	<dw:bootstrap-listener class-name="br.com.auster.tim.billcheckout.listener.ReadRequestModeListener"
+		xmlns:dw="http://www.auster.com.br/dware/">
+		<config>
+			<database pool-name="sql/billcheckoutdb" />
+		</config>
+	</dw:bootstrap-listener>
+
+	<!--
+	<management:configuration xmlns:management="http://www.auster.com.br/commom/management/">
+		<management:register use-default="true" class-name="" ip-address="10.168.54.64" tcp-port="3099"
+			jndi-name="jmxconnector" />
+	</management:configuration>
+	-->
+
+	<sql:configuration xmlns:sql="http://www.auster.com.br/common/sql/">
+		<sql:database name="sql/billcheckoutdb">
+			<sql:statements path="conf/sql/billcheckout-sql.xml"/>
+			<sql:statements path="conf/sql/checkpoint-sql.xml"/>
+		</sql:database>
+		<sql:database name="sql/guidingdb">
+			<sql:statements path="conf/sql/guiding-sql.xml"/>
+		</sql:database>
+		<sql:database name="sql/bscspredb">
+			<sql:statements path="conf/sql/bscs-sql.xml"/>
+		</sql:database>
+		<sql:database name="sql/bscsproddb">
+			<sql:statements path="conf/sql/bscs-sql.xml"/>
+		</sql:database>
+	</sql:configuration>
+
+	<requests:configuration xmlns:requests="http://www.auster.com.br/dware/requests/">
+		<error-listener class-name="br.com.auster.dware.console.listeners.JMSErrorListener">
+			 <config  jndi.context.factory="weblogic.jndi.WLInitialContextFactory"
+					  jndi.context.url="t3://localhost:7101"
+					  jndi.jms.factory="billcheckout.QueueConnectionFactory"
+					  jndi.jms.name="queue/procNotification" />
+		</error-listener>
+
+		<builder name="bgh" class-name="br.com.auster.dware.request.file.FileRequestBuilder">
+			<config bufferSize="262244" encoding="ISO-8859-1" maxRecordSize="2048" record-delimiter="\n"
+				field-delimiter="^" request-create-type="FileRequest">
+				<record-key index="1" position="1" length="8" trim="false" new-request-pattern="00000000" />
+				<request-key record-key-pattern="00000000">
+					<field name="key" index="9" position="1" length="8" type="java.lang.String" />
+				</request-key>
+				<record key="00000000">
+					<field name="accountNumber" index="8" />
+				</record>
+				<record key="10000000">
+					<field name="cutDate" index="27" />
+				</record>
+				<record key="11200000">
+					<field name="cutDate" index="27" />
+				</record>
+			</config>
+		</builder>
+		<builder-chain name="default">
+			<builder name="bgh" />
+		</builder-chain>
+		<builder-chain name="webportal">
+			<builder name="bgh" />
+		</builder-chain>
+	</requests:configuration>
+
+	<dw:configuration name="invoice" xmlns:dw="http://www.auster.com.br/dware/">
+
+		<dw:mbean mbean-component="DataAware" mbean-class-name="br.com.auster.dware.monitor.dware.JMXDWare"
+			pass-reference="true" />
+
+		<dw:graph-manager>
+
+			<dw:mbean mbean-component="GraphManager"
+				mbean-class-name="br.com.auster.dware.monitor.manager.JMXGraphManager" pass-reference="true" />
+
+			<dw:mbean mbean-component="graph" mbean-class-name="br.com.auster.dware.monitor.graph.JMXGraph"
+				pass-reference="true" />
+
+			<dw:local-graph-group name="group-01" max-graphs="2" max-weight="2000000">
+				<dw:mbean mbean-component="PriorityQueueWishGraphGroup"
+					mbean-class-name="br.com.auster.dware.monitor.manager.JMXPriorityWishGraphGroup" pass-reference="true" />
+			</dw:local-graph-group>
+
+			<dw:local-graph-group name="group-02" max-graphs="1" max-weight="4500001">
+				<dw:mbean mbean-component="PriorityQueueWishGraphGroup"
+					mbean-class-name="br.com.auster.dware.monitor.manager.JMXPriorityWishGraphGroup" pass-reference="true" />
+			</dw:local-graph-group>
+
+			<dw:request-forwarder class-name="br.com.auster.dware.manager.FIFOQueueReqForwarder" />
+
+            <dw:checkpoint class-name="br.com.auster.dware.manager.checkpoint.SQLCheckpoint"
+						   database-name="sql/billcheckoutdb"
+                           max-req-fails="1"
+                           requeue-sleep-milis="500">
+		        <query-all statement-name="loadAllRequests">
+		                <columns transaction-id="1" request-id="2" status="3"/>
+		        </query-all>
+		        <query-by-transaction statement-name="loadAllByTransaction">
+		                <columns request-id="1" status="2"/>
+		                <params transaction-id="1"/>
+		        </query-by-transaction>
+		        <insert statement-name="insertRequest">
+		                <params transaction-id="1" request-id="2" status="3"/>
+		        </insert>
+		        <update statement-name="updateRequest">
+		                <params status="1" transaction-id="2" request-id="3"/>
+		        </update>
+			</dw:checkpoint>
+
+			<dw:queue-processed-listeners>
+				<!--  QueueProcessedListener implementation that removes resume files from filesystem -->
+				<dw:listener class-name="br.com.auster.dware.listeners.resume.ResumeControlQueueProcessedListener"/>
+				<!--  QueueProcessedListener implementation that removes rows from checkpoint table -->
+				<dw:listener class-name="br.com.auster.dware.manager.checkpoint.SQLCheckpointControlQueueProcessedListener"
+							 database-name="sql/billcheckoutdb"
+					         delete-query="removeRequests"/>
+				<!--  QueueProcessedListener implementation that notifies BCK portal that the transaction has finished -->
+				<dw:listener class-name="br.com.auster.billcheckout.listeners.BillcheckoutQueueProcessedListener">
+					<config pool-timer="30000"
+							   jms-path="jms/jms-config.properties"
+							   pool-name="sql/billcheckoutdb">
+					</config>
+				</dw:listener>
+			</dw:queue-processed-listeners>
+
+		</dw:graph-manager>
+
+		<dw:startup-listener class-name="br.com.auster.dware.listeners.resume.EnqueuePersistenceStartupListener"
+			xmlns:dw="http://www.auster.com.br/dware/">
+			<config/>
+		</dw:startup-listener>
+
+		<dw:graph-design>
+
+			<finish-listener class-name="br.com.auster.dware.console.listeners.JMSFinishListener">
+				 <config  jndi.context.factory="weblogic.jndi.WLInitialContextFactory"
+						  jndi.context.url="t3://localhost:7101"
+						  jndi.jms.factory="billcheckout.QueueConnectionFactory"
+						  jndi.jms.name="queue/procNotification" />
+			</finish-listener>
+
+			<dw:filter name="InputFromFile" class-name="br.com.auster.dware.filter.PartialInputFromFileList">
+				<dw:config buffer-size="16384" file-cache-size="10" />
+				<dw:connect-to name="Pipe" />
+			</dw:filter>
+
+			<dw:filter name="Pipe" class-name="br.com.auster.dware.filter.PipeFilter">
+				<dw:connect-to name="BGH2XML" />
+			</dw:filter>
+
+			<dw:filter name="BGH2XML" class-name="br.com.auster.dware.filter.XMLReaderFilter">
+				<dw:config class-name="br.com.auster.udd.reader.TaggedFileReader">
+					<dw:xml-reader udd-path="bgh/ifd-udd.xml" quiet-missing="true" encrypted="false" />
+				</dw:config>
+				<dw:connect-to name="RequestDropper" />
+			</dw:filter>
+
+            <!-- Checks to see if the request is above a given threshold -->
+            <dw:filter name="RequestDropper" class-name="br.com.auster.dware.filter.CHLimiterPipeFilter">
+                 <dw:config max-size="25000000" pct-deviation="0" ignore-exception="false">
+                 </dw:config>
+                 <dw:connect-to name="InvoiceLoader" />
+            </dw:filter>
+
+			<dw:filter name="InvoiceLoader" class-name="br.com.auster.om.filter.InvoiceLoaderFilter">
+				<dw:config>
+					<dw:object-list-tag name="invoice-om" />
+					<dw:invoice-loader class-name="br.com.auster.tim.bgh.sax.TIMOMLoader">
+						<xml-paths>
+							<!-- Handles Invoice and Account Block -->
+							<path value="/IFD/GeneralInformation"
+								handler="br.com.auster.tim.bgh.sax.InvoiceAndAccountHandler" />
+
+							<!-- Handles NF for TIM -->
+							<path value="/IFD/GeneralInformation/NFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFHeaderHandler" />
+							<path value="/IFD/GeneralInformation/NFHeader/ServicesSummary"
+								handler="br.com.auster.tim.bgh.sax.TIMNFSubscriptionHandler" />
+							<path value="/IFD/GeneralInformation/NFHeader/ServicesSummary"
+								handler="br.com.auster.tim.bgh.sax.NFContractServicesHandler" />
+							<path value="/IFD/GeneralInformation/NFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFGroupAndItemsHandler" />
+							<path value="/IFD/GeneralInformation/NFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFOCCGroupHandler" />
+							<path value="/IFD/GeneralInformation/NFHeader"
+								handler="br.com.auster.tim.bgh.sax.PromotionPackageHandler" />
+							<path value="/IFD/GeneralInformation/NFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFFreeUnitHandler" />
+							<path value="/IFD/GeneralInformation/SummaryOfNotasFiscais"
+								handler="br.com.auster.tim.bgh.sax.IndividualNFHandler" />
+							<path value="/IFD/GeneralInformation/TaxSummary"
+								handler="br.com.auster.tim.bgh.sax.NFTaxesHandler" />
+
+							<path value="/IFD/GeneralInformation/RetentionTaxes"
+								handler="br.com.auster.tim.bgh.sax.NFTaxesHandler" />
+
+							<!-- Handles NF for Long Distance Carriers -->
+							<path value="/IFD/GeneralInformation/LDCNFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFHeaderHandler" />
+							<path value="/IFD/GeneralInformation/LDCNFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFGroupAndItemsHandler" />
+							<path value="/IFD/GeneralInformation/LDCNFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFOCCGroupHandler" />
+							<path value="/IFD/GeneralInformation/LDCNFHeader/Services"
+								handler="br.com.auster.tim.bgh.sax.NFContractServicesHandler" />
+							<path value="/IFD/GeneralInformation/LDCNFHeader/ServicesSubTotal"
+								handler="br.com.auster.tim.bgh.sax.NFContractServicesHandler" />
+							<path value="/IFD/GeneralInformation/LDCNFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFFreeUnitHandler" />
+							<path value="/IFD/GeneralInformation/LDCNFHeader/TaxSummary"
+								handler="br.com.auster.tim.bgh.sax.NFTaxesHandler" />
+
+							<!-- Handles Paystub Block -->
+							<path value="/IFD/GeneralInformation/PayStubInformation"
+								handler="br.com.auster.tim.bgh.sax.PaystubHandler" />
+
+							<!-- Handles Details Block -->
+							<path value="/IFD/GeneralInformation/Details"
+								handler="br.com.auster.tim.bgh.sax.InvoiceDetailsHandler" />
+							<path value="/IFD/GeneralInformation/Details/ContractInfo"
+								handler="br.com.auster.tim.bgh.sax.InvoiceContractDetailsHandler" />
+							<path value="/IFD/GeneralInformation/Details/ContractInfo/UsageGroup"
+								handler="br.com.auster.tim.bgh.sax.ContractUsageGroupHandler" />
+							<path value="/IFD/GeneralInformation/Details/ContractInfo/UsageGroup/OneCall"
+								handler="br.com.auster.tim.bgh.sax.ContractUsageDetailsHandler" />
+
+							<!-- Handles TotalsPerContract Block -->
+							<path value="/IFD/GeneralInformation/ContractSubscription"
+								handler="br.com.auster.tim.bgh.sax.TotalsPerContractHandler" />
+							<path value="/IFD/GeneralInformation/ContractServices"
+								handler="br.com.auster.tim.bgh.sax.TotalsPerContractHandler" />
+							<path value="/IFD/GeneralInformation/ContractOCC"
+								handler="br.com.auster.tim.bgh.sax.TotalsPerContractHandler" />
+							<path value="/IFD/GeneralInformation/ContractDiscounts"
+								handler="br.com.auster.tim.bgh.sax.TotalsPerContractHandler" />
+							<path value="/IFD/GeneralInformation/ContractFU"
+								handler="br.com.auster.tim.bgh.sax.TotalsPerContractHandler" />
+							<path value="/IFD/GeneralInformation/ContractTotal"
+								handler="br.com.auster.tim.bgh.sax.TotalsPerContractHandler" />
+						</xml-paths>
+					</dw:invoice-loader>
+
+				</dw:config>
+				<dw:connect-to name="GuidingFilter" />
+			</dw:filter>
+
+			<dw:filter name="GuidingFilter" class-name="br.com.auster.tim.billcheckout.filter.ImprovedInvoiceRulesEngineFilter">
+				<dw:config>
+					<dw:input-list-tag name="invoice-om" />
+					<dw:results-map-tag name="unused-list"/>
+
+					<dw:rules-engine class-name="br.com.auster.billcheckout.drools.Drools3RulesEngineProcessor"
+									 debug="false" dump-rete="false" output-file="log/rulesout.log">
+
+						<dw:rules-file file-name="rules/guiding/guiding.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/guiding/load-carrier-code.drl" encrypted="false" />
+
+					</dw:rules-engine>
+					<dw:globals-list>
+						<!-- global for services -->
+						<dw:global name="serviceCache" class-name="br.com.auster.tim.billcheckout.param.ServicesCache"
+							lazy-cache="true" use-alternate="true" cache-size="1000">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<!-- global for plans -->
+						<dw:global name="planCache" class-name="br.com.auster.tim.billcheckout.param.PlansCache"
+ 					        lazy-cache="true" use-alternate="true" cache-size="1000">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<!-- global for timezone -->
+						<dw:global name="tariffZoneCache" class-name="br.com.auster.tim.billcheckout.param.TariffZoneCache"
+							lazy-cache="true" use-alternate="true" cache-size="500">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<!-- global for usage groups -->
+						<dw:global name="usageGroupCache" class-name="br.com.auster.tim.billcheckout.param.UsageGroupCache"
+ 					        lazy-cache="true" use-alternate="true" cache-size="200">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<!-- global for LD usage groups -->
+						<dw:global name="usageGroupLDCache" class-name="br.com.auster.tim.billcheckout.param.UsageGroupLDCache"
+ 					        lazy-cache="true" use-alternate="true" cache-size="100">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<!-- global for timezone -->
+						<dw:global name="rateZoneCache" class-name="br.com.auster.tim.billcheckout.param.RateTimeZoneCache"
+							lazy-cache="true" use-alternate="true" cache-size="500">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<!-- global for service + plan relation -->
+						<dw:global name="servicePlanCache" class-name="br.com.auster.tim.billcheckout.param.ServicePlanCache"
+							lazy-cache="true" use-alternate="true" cache-size="2000">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<!-- global for tariffzone + usagegroup relation -->
+						<dw:global name="tariffZoneUsageGroupCache" class-name="br.com.auster.tim.billcheckout.param.TariffZoneUsageGroupCache"
+ 					        lazy-cache="true" use-alternate="true" cache-size="500">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<!-- global for microcell mapping -->
+						<dw:global name="mcMapping" class-name="br.com.auster.tim.billcheckout.tariff.MicrocellMappingCache"
+							lazy-cache="true" use-alternate="false" cache-size="500">
+							<database pool-name="sql/guidingdb"/>
+						</dw:global>
+					</dw:globals-list>
+				</dw:config>
+				<dw:connect-to name="RulesFilter" />
+			</dw:filter>
+
+			<dw:filter name="RulesFilter" class-name="br.com.auster.tim.billcheckout.filter.ImprovedInvoiceRulesEngineFilter">
+				<dw:config>
+					<dw:input-list-tag name="invoice-om" />
+					<dw:rules-engine class-name="br.com.auster.billcheckout.drools.Drools3RulesEngineProcessor"
+						debug="false" dump-rete="false" output-file="log/rulesout.log">
+						<!-- fase 1 -->
+						<dw:rules-file file-name="rules/INIT-create-cycledates-objects.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/INIT-create-dimension-objects.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/R1.4-below-zero-usage-validation.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/R01.5-usage-threshold-validation.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/R01.6-usage-duration-threshold-validation.drl"/>
+						<dw:rules-file file-name="rules/R1.7-usage-charge-info-validation.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/R01.8-expired-usage-validation.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/R01.9-duplicated-usage-validation.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/RX.1-date-format-validation.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/A13-cycle-dates.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/A11-nf-threshold.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/R12.1-sections-totals-validation.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/R14.1-barcode-validation.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/R14.3-paymentdata-validation.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/R14.5-check-carrier-in-paystub.drl"/>
+						<dw:rules-file file-name="rules/R17.2-invoice-total-validation.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/R01.1-usage-rating.drl"/>
+						<!-- fase 2 -->
+						<dw:rules-file file-name="rules/R01.12-resolucao-316.drl"/>
+						<dw:rules-file file-name="rules/R01.18-sliced-calls-detection.drl"/>
+						<dw:rules-file file-name="rules/R02.3-service-doesnot-exist.drl"/>
+                        <dw:rules-file file-name="rules/R04-5-duplicated-usage-latecalls.drl"/>
+						<dw:rules-file file-name="rules/R04.6-plan-doesnot-contain-service.drl"/>
+						<dw:rules-file file-name="rules/R05.2_3_4-validate-carrier-info.drl"/>
+						<dw:rules-file file-name="rules/R06.1-validate-nf-number.drl"/>
+						<dw:rules-file file-name="rules/R09.3-custcode-validation.drl"/>
+						<dw:rules-file file-name="rules/R09.4-directdebit-validation.drl"/>
+						<dw:rules-file file-name="rules/R15.1-validate-usage-icms.drl"/>
+						<dw:rules-file file-name="rules/R15.2-validate-service-taxes.drl"/>
+						<dw:rules-file file-name="rules/R16.1-hashcode-validation.drl"/>
+						<dw:rules-file file-name="rules/R27.1-OCCs-thresholds.drl"/>
+						<dw:rules-file file-name="rules/R27.4-duplicated-OCCs.drl"/>
+						<dw:rules-file file-name="rules/R28.8-corporate-diff-duedates.drl"/>
+						<!-- fase 3 -->
+						<dw:rules-file file-name="rules/R01.10-incorrect-usagegroup-for-call.drl"/>
+						<dw:rules-file file-name="rules/R01.11-free-calls-without-benefit.drl"/>
+						<dw:rules-file file-name="rules/R03.2-benefit-without-promotion-charges.drl"/>
+						<dw:rules-file file-name="rules/R04.3-credcorp-validation.drl"/>
+						<dw:rules-file file-name="rules/R04.4-validate-calls-in-mc.drl"/>
+						<dw:rules-file file-name="rules/R06.2-validate-nf-series.drl"/>
+						<dw:rules-file file-name="rules/R15.3-icms-verification.drl"/>
+						<dw:rules-file file-name="rules/R19.3-promotions-limits-validation.drl"/>
+						<dw:rules-file file-name="rules/R19.6-promotion-outof-validity.drl"/>
+						<dw:rules-file file-name="rules/R25.1-validate-service-activation-debit.drl"/>
+						<dw:rules-file file-name="rules/R28.1-package-different-plan-detection.drl"/>
+						<dw:rules-file file-name="rules/R28.2-plan-without-mandatory-package.drl"/>
+						<!-- fase 4 -->
+						<dw:rules-file file-name="rules/R03.x-INIT.drl"/>
+						<dw:rules-file file-name="rules/R03.3-fu-validation.drl"/>
+						<dw:rules-file file-name="rules/R03.6-fu-hierarchy.drl"/>
+						<dw:rules-file file-name="rules/R29.1-penalty-interest-validation.drl"/>
+						<dw:rules-file file-name="rules/R24.1-cancelation-charges.drl"/>
+						<dw:rules-file file-name="rules/R23.1-incompatible-services.drl"/>
+						<dw:rules-file file-name="rules/R02.1-progressive-discount-contracts.drl"/>
+						<dw:rules-file file-name="rules/R02.1-progressive-discount-usage.drl"/>
+						<dw:rules-file file-name="rules/INIT-reset-step.drl"/>
+						<!-- Melhorias Fase 1 -->
+						<dw:rules-file file-name="rules/R30.1-month-internet.drl"/>
+						<dw:rules-file file-name="rules/R31.1-infinity.drl"/>
+						<!-- Melhorias Fase 2 -->
+						<dw:rules-file file-name="rules/R32.1-codigo-anatel-contract.drl"/>
+						<dw:rules-file file-name="rules/R32.1-codigo-anatel-subscription.drl"/>
+						<dw:rules-file file-name="rules/R33.1-discount-implicit.drl"/>
+						<!-- Melhorias Fase 3 -->
+						<dw:rules-file file-name="rules/R34.1-megatim-by-usage.drl"/>
+						<dw:rules-file file-name="rules/R34.1-megatim-init.drl"/>
+						<dw:rules-file file-name="rules/R34.2-megatim-by-account.drl"/>
+						<dw:rules-file file-name="rules/R01.22-plans-services-packages-tariff.drl"/>
+						<dw:rules-file file-name="rules/R01.23-data-rating.drl"/>
+						<dw:rules-file file-name="rules/R01.30-npack-validation.drl"/>
+						<dw:rules-file file-name="rules/R01.40-crash-program-validation.drl"/>
+						<dw:rules-file file-name="rules/R01.20-half-rate-plan.drl"/>
+						<dw:rules-file file-name="rules/R01.21-my-dream-plan.drl"/>
+					</dw:rules-engine>
+
+					<dw:results-map-tag name="consequence-list" />
+
+					<dw:globals-list>
+						<dw:global name="dimensionCache"
+							class-name="br.com.auster.tim.billcheckout.util.TIMDimensionCache" />
+						<dw:global name="modelLoader"
+							class-name="br.com.auster.billcheckout.model.ModelLoader"
+							factory-config ="sql/model-hibernate-configuration.xml"/>
+						<dw:global name="consequenceBuilder"
+							class-name="br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder"/>
+						<dw:global name="carrierDataCache"
+							class-name="br.com.auster.billcheckout.model.cache.CarrierDataCache"
+							lazy-cache="true" use-alternate="true" cache-size="200">
+							<database pool-name="sql/billcheckoutdb"/>
+						</dw:global>
+						<dw:global name="taxRateCache"
+							class-name="br.com.auster.billcheckout.model.cache.TaxRateCache"
+							lazy-cache="true" use-alternate="true" cache-size="300">
+							<database pool-name="sql/billcheckoutdb"/>
+						</dw:global>
+						<dw:global name="bghUsageGroupingCache" class-name="br.com.auster.tim.billcheckout.util.UsageGroupingCache"
+						           cache-size="5000">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<!--  fase 3 -->
+						<dw:global name="roamingAgreeCache" class-name="br.com.auster.tim.billcheckout.param.RoamingAgreeCache"
+							lazy-cache="true" use-alternate="true" cache-size="100">
+							<database pool-name="sql/billcheckoutdb"/>
+						</dw:global>
+						<dw:global name="packageCache" class-name="br.com.auster.tim.billcheckout.param.PackageCache"
+							lazy-cache="true" use-alternate="true" cache-size="500">
+							<database pool-name="sql/billcheckoutdb"/>
+						</dw:global>
+						<dw:global name="planCache" class-name="br.com.auster.tim.billcheckout.param.PlansCache"
+ 					        lazy-cache="true" use-alternate="true" cache-size="1000">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<dw:global name="servicesCache" class-name="br.com.auster.tim.billcheckout.param.ServicesCache"
+							lazy-cache="true" use-alternate="false" cache-size="1000">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<dw:global name="servicesAlternateCache" class-name="br.com.auster.tim.billcheckout.param.ServicesCache"
+							lazy-cache="true" use-alternate="true" cache-size="1000">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>						
+						<dw:global name="packagesByPlansCache" class-name="br.com.auster.tim.billcheckout.param.PackagesByPlansCache"
+							lazy-cache="true" use-alternate="true" cache-size="500">
+							<database pool-name="sql/billcheckoutdb"/>
+						</dw:global>
+						<!--  The next globals access BSCS information directly -->
+						<dw:global name="sgtCache" class-name="br.com.auster.tim.billcheckout.bscs.SGTCustomCache"
+							lazy-cache="true" use-alternate="true" cache-size="100">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="mpufftabCache" class-name="br.com.auster.tim.billcheckout.param.MpufftabCache"
+							lazy-cache="true" use-alternate="true" cache-size="50">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="mpulkfxoCache" class-name="br.com.auster.tim.billcheckout.param.MpulkfxoCache"
+							lazy-cache="true" use-alternate="true" cache-size="50">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="mpulktmbCache" class-name="br.com.auster.tim.billcheckout.param.MpulktmbCache"
+							lazy-cache="true" use-alternate="true" cache-size="50">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="mpulkpvbCache" class-name="br.com.auster.tim.billcheckout.param.MpulkpvbCache"
+							lazy-cache="true" use-alternate="true" cache-size="50">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="contractServicesCache" class-name="br.com.auster.tim.billcheckout.param.ContractServicesCache"
+							lazy-cache="true" use-alternate="true" cache-size="100">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="contractServicesPeriodCache" class-name="br.com.auster.tim.billcheckout.param.ContractServicesPeriodCache"
+							lazy-cache="true" use-alternate="true" cache-size="100">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="mpufftabListCache" class-name="br.com.auster.tim.billcheckout.param.MpufftabListCache"
+							lazy-cache="true" use-alternate="true" cache-size="10">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="contractPromotionsCache" class-name="br.com.auster.tim.billcheckout.param.ContractPromotionsCache"
+							lazy-cache="true" use-alternate="true" cache-size="50">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="contrServicesDAO" class-name="br.com.auster.tim.billcheckout.param.ContractServicesDAO"
+							lazy-cache="true" use-alternate="false" cache-size="10">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<!-- Fase 4 -->
+						<dw:global name="fuHelper" class-name="br.com.auster.tim.billcheckout.util.FreeUnitHelper">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="OCCDescriptions" class-name="br.com.auster.tim.billcheckout.param.OCCContractBreakCache"
+							lazy-cache="false" use-alternate="true" cache-size="100">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="CBCFInterface" class-name="br.com.auster.tim.billcheckout.param.CBCFContractDAO">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="penaltyInterestLDNFCache" class-name="br.com.auster.tim.billcheckout.param.PenaltyInterestLDNFCache"
+							lazy-cache="true" use-alternate="true" cache-size="10">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="penaltyInterestLocalNFCache" class-name="br.com.auster.tim.billcheckout.param.PenaltyInterestLocalNFCache"
+							lazy-cache="true" use-alternate="true" cache-size="10">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="progressiveDiscountCache" class-name="br.com.auster.tim.billcheckout.param.ProgressiveDiscountCache"
+							lazy-cache="true" use-alternate="true" cache-size="10">
+							<database pool-name="sql/billcheckoutdb"/>
+						</dw:global>
+						<dw:global name="promotionExclusivityCache" class-name="br.com.auster.tim.billcheckout.param.PromotionExclusivityCache"
+							lazy-cache="true" use-alternate="true" cache-size="10">
+							<database pool-name="sql/billcheckoutdb"/>
+						</dw:global>
+						<dw:global name="dwPromoMcCache" class-name="br.com.auster.tim.billcheckout.param.DwPromoMcCache"
+							lazy-cache="true" use-alternate="true" cache-size="10">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="rateplanHist" class-name="br.com.auster.tim.billcheckout.bscs.RateplanHistCache"
+							lazy-cache="true" use-alternate="true" cache-size="10">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="usageGroupCache" class-name="br.com.auster.tim.billcheckout.param.UsageGroupCache"
+ 					        lazy-cache="true" use-alternate="true" cache-size="200">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<dw:global name="tariffZoneCache" class-name="br.com.auster.tim.billcheckout.param.TariffZoneCache"
+							lazy-cache="true" use-alternate="true" cache-size="500">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<!-- Melhorias Fase 2 -->
+						<!-- R33.1 Q2 e Q3, use-alternate="", pois eh definido em getFromCache() de ElegibilityCache. 
+							 Por default, vi q seta false em DOMUtils -->
+						<dw:global name="elegibCache" class-name="br.com.auster.tim.billcheckout.param.ElegibilityCache"
+ 		   						lazy-cache="true" use-alternate="" cache-size="300"> 
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<!-- R33.1 Q4 -->
+						<dw:global name="contrExistsServCache" class-name="br.com.auster.tim.billcheckout.param.ContractExistsServicesCache"
+							lazy-cache="true" use-alternate="true" cache-size="200">
+                            <database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>	
+						<!-- R33.1 Q5 -->
+						<dw:global name="contrExistsPackCache" class-name="br.com.auster.tim.billcheckout.bscs.ContractExistsPackCache"
+							lazy-cache="true" use-alternate="true" cache-size="200">
+                            <database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>	
+						<!-- R33.1 Q6 -->
+						<dw:global name="scanStructLevelCache" class-name="br.com.auster.tim.billcheckout.bscs.ScanStructureLevelCache"
+							lazy-cache="true" use-alternate="false" cache-size="400">
+                            <database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>	
+						<dw:global name="anatelCodeCache" class-name="br.com.auster.tim.billcheckout.bscs.AnatelCodeCache"
+							lazy-cache="true" use-alternate="false" cache-size="300">
+                            <database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>	
+						<!--                  -->
+						<!-- Melhorias Fase 3 -->
+						<!--                  -->
+						<dw:global name="microcellRatesCache" class-name="br.com.auster.tim.billcheckout.tariff.MicrocellRatesCache"
+ 		   						lazy-cache="true" use-alternate="false" cache-size="300"> 
+							<database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<dw:global name="microcellSGTRatesCache" class-name="br.com.auster.tim.billcheckout.tariff.MicrocellSGTRatesCache"
+ 		   						lazy-cache="true" use-alternate="false" cache-size="300"> 
+                            <database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="serviceRatesCache" class-name="br.com.auster.tim.billcheckout.tariff.ServiceRatesCache"
+							lazy-cache="true" use-alternate="false" cache-size="1000">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<dw:global name="ratingsCache" class-name="br.com.auster.tim.billcheckout.tariff.RatesGuidingCache"
+								lazy-cache="true" use-alternate="true" cache-size="10000">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<dw:global name="npackInfoCache" class-name="br.com.auster.tim.billcheckout.npack.NPackPackageInfoCache"
+							lazy-cache="true" use-alternate="false" cache-size="1000">
+                           <database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="npackRateCache" class-name="br.com.auster.tim.billcheckout.npack.NPackRateCache"
+							lazy-cache="true" use-alternate="false" cache-size="1000">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<dw:global name="costCenterCache" class-name="br.com.auster.tim.billcheckout.crashprogram.CostCenterCache"
+							lazy-cache="true" use-alternate="false" cache-size="1000">
+                            <database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="cashProgramRatesCache" class-name="br.com.auster.tim.billcheckout.tariff.CrashProgramRatesCache"
+							lazy-cache="true" use-alternate="false" cache-size="1000">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<dw:global name="alternateServiceRatesCache" class-name="br.com.auster.tim.billcheckout.tariff.ServiceRatesCache"
+							lazy-cache="true" use-alternate="true" cache-size="1000">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+
+						<dw:global name="megatimCache" class-name="br.com.auster.tim.billcheckout.tariff.MegaTIMCache"
+							lazy-cache="true" use-alternate="false" cache-size="100">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<dw:global name="customerSituationCache" class-name="br.com.auster.tim.billcheckout.param.CustomerSituationCache"
+							lazy-cache="true" use-alternate="false" cache-size="100">
+                            <database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="plansCache" class-name="br.com.auster.tim.billcheckout.param.PlansCache"
+ 					        lazy-cache="true" use-alternate="true" cache-size="100">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<dw:global name="pricePlanCache" class-name="br.com.auster.tim.billcheckout.tariff.PricePlanRatesCache"
+								lazy-cache="true" use-alternate="false" cache-size="1000">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>							
+						<dw:global name="myDreamCache" class-name="br.com.auster.tim.billcheckout.tariff.MyDreamRatesCache"
+								lazy-cache="true" use-alternate="false" cache-size="1000">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>							
+						<dw:global name="alternatePricePlanCache" class-name="br.com.auster.tim.billcheckout.tariff.PricePlanRatesCache"
+								lazy-cache="true" use-alternate="true" cache-size="1000">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>							
+					</dw:globals-list>
+				</dw:config>
+				<dw:connect-to name="TransactionSetting" />
+			</dw:filter>
+
+			<dw:filter name="TransactionSetting" class-name="br.com.auster.dware.filter.DataRetrieverFilter">
+				<dw:config>
+					<dw:data-retriever class-name="br.com.auster.common.data.groovy.GroovyDataRetriever"
+						config-file="ep/set-transaction-id.xml" encrypted="false" />
+					<dw:request-tag name="request" />
+				</dw:config>
+				<dw:connect-to name="EPAggregator" />
+			</dw:filter>
+
+			<dw:filter name="EPAggregator" class-name="br.com.auster.om.filter.AggregationEngineFilter">
+				<dw:config>
+					<dw:request-tag name="request" />
+					<dw:aggregation-engine class-name="br.com.auster.common.data.groovy.DeclarativeAggregationEngine"
+						config-file="ep/ep-aggregation.xml" encrypted="false" />
+
+				</dw:config>
+				<dw:connect-to name="HibernateSaver" />
+			</dw:filter>
+
+			<dw:filter name="HibernateSaver" class-name="br.com.auster.billcheckout.filter.telco.TelcoBillcheckoutPersistenceFilter">
+				<dw:config input-list-tag="consequence-list">
+					<dw:hibernate file-name="sql/consequence-hibernate.xml" encrypted="false" commit-count="500" />
+
+				</dw:config>
+				<dw:connect-to name="ObjectSaver" />
+			</dw:filter>
+
+			<dw:filter name="ObjectSaver" class-name="br.com.auster.dware.filter.DataSaverFilter">
+				<dw:config>
+
+					<dw:database url="jdbc:apache:commons:dbcp:/sql/billcheckoutdb"/>
+					<dw:data-saver-list>
+						<dw:data-saver class-name="br.com.auster.common.data.sql.SQLCubeDataSaver"
+							config-file="sql/invoice-ep-saver.xml" encrypted="false" />
+						<dw:data-saver class-name="br.com.auster.common.data.sql.SQLCubeDataSaver"
+							config-file="sql/contract-ep-saver.xml" encrypted="false" />
+					</dw:data-saver-list>
+
+				</dw:config>
+			</dw:filter>
+		</dw:graph-design>
+	</dw:configuration>
+
+</data-aware>
+

@@ -1,0 +1,236 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.common.lang.NamedDouble;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.util.UnitCounter;
+import br.com.auster.tim.om.invoice.FreeUnitsReceiptDetail;
+import br.com.auster.tim.om.invoice.TIMReceiptDetail;
+import br.com.auster.om.invoice.Receipt;
+import br.com.auster.tim.billcheckout.util.XStreamLoader;
+import br.com.auster.tim.billcheckout.util.FreeUnitAccumulator;
+import br.com.auster.tim.bgh.sax.BGHDataFormats;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+
+/**
+ * This function will help the DATA version of this rule to choose which unit to compare: bytes, kbytes, mbytes or gbytes.
+ *
+ * The possible result values are:
+ *  0 - bytes (default)
+ *  1 - kbytes
+ *  2 - mbytes
+ *  3 - gbytes
+ */
+function int typeOfDataUsage(String _usage) {
+
+  // return bytes
+  if ((_usage == null) || (_usage.length() < 2)) {
+     return 0;
+  }
+  char charAt = _usage.charAt(_usage.length()-2);
+  if ((charAt=='K') || (charAt=='k')) {
+  	return 1;
+  } else if ((charAt=='M') || (charAt=='m')) {
+  	return 2;
+  } else if ((charAt=='G') || (charAt=='g')) {
+  	return 3;
+  } else if ((charAt=='T') || (charAt=='t')) {
+  	return 4;
+  }
+  // default
+  return 0;
+}
+
+
+function String formatDataUsage(String _usage, UnitCounter _uc) {
+
+  if (_uc == null) { return null; }
+  // default is to return toString()
+  if (! UnitCounter.DATA_COUNTER.equals(_uc.getType())) { return _uc.toString(); }
+  // only modify the output it it's DATA_TYPE
+  String unit=" B";
+  double value=_uc.getUnits();
+  if ((_usage != null) && (_usage.length() >= 2)) {
+	  char charAt = _usage.charAt(_usage.length()-2);
+	  if ((charAt=='K') || (charAt=='k')) {
+	    value=_uc.getKBytes();
+	  	unit=" KB";
+	  } else if ((charAt=='M') || (charAt=='m')) {
+	  	value=_uc.getMBytes();
+	  	unit=" MB";
+	  } else if ((charAt=='G') || (charAt=='g')) {
+	    value=_uc.getGBytes();
+	  	unit=" GB";
+	  } else if ((charAt=='T') || (charAt=='t')) {
+	    value=_uc.getTBytes();
+	  	unit=" TB";
+	  }
+  }
+  return (BGHDataFormats.formatNumber(value) + unit);
+}
+
+
+
+/**
+ *  This rule depends on DRL 'R03.x-INIT.drl'
+ */
+
+rule "Regra R03.3 - Accumulating FreeUnit usage - Step1"
+	salience 70
+	when
+		FreeUnitAccumulator ( $accountId : accountId,
+							  $periodStart : periodStart
+							 )
+
+		not ( NamedDouble ($name : name -> ($name.equals("R03.3-" + $accountId + $periodStart)))
+		    )
+
+    then
+		NamedDouble nd = new NamedDouble("R03.3-" + $accountId + $periodStart);
+		assert(nd);
+end
+
+
+rule "Regra R03.3 - Accumulating FreeUnit usage - Step2"
+	salience 60
+	when
+		FreeUnitAccumulator ( $accountId : accountId,
+							  $periodStart : periodStart,
+							  $volume : totalVolume
+							 )
+
+		$nd : NamedDouble ($name : name -> ($name.equals("R03.3-" + $accountId + $periodStart))
+		                   )
+
+    then
+    	$nd.addTo($volume.getUnits());
+end
+
+rule "Regra R03.3 - Validating usage over the limits of the FU Package"
+	salience 50
+	when
+		NamedDouble ( $name : name -> ($name.startsWith("R03.3-")),
+		 			  $value : value
+		            )
+
+		$furd : FreeUnitsReceiptDetail( $accountID : accountID -> ($name.indexOf($accountID) > 0),
+				  					 	$startDate : startDate -> ($name.indexOf($startDate.toString()) > 0),
+										$unitCount : unitCount,
+										$usedCount : unitUsedCount,
+										$description : serviceId
+		                      		   )
+
+		$trd : TIMReceiptDetail ( receiptGroupItems contains $furd )
+
+		Receipt ( details contains $trd,
+				  $carrierCode : carrierCode
+				)
+
+    then
+		UnitCounter fuUnitCounter = BGHDataFormats.buildUnitCounter($unitCount);
+
+		if (fuUnitCounter.getUnits() < $value.longValue()) {
+			consequenceBuilder.setRule("R03-3","Aplicação franquia pct/promoção");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription("Benefício de franquia atribuído além do limite do pacote.");
+			c.addAttribute("Pacote", $description);
+			c.addAttribute("Limite disponível", formatDataUsage($unitCount, fuUnitCounter));
+			UnitCounter uc = BGHDataFormats.buildUnitCounter($usedCount);
+			c.addAttribute("Uso informado na fatura", formatDataUsage($usedCount, uc));
+			uc.setUnits($value.longValue());
+			c.addAttribute("Uso real total", formatDataUsage($usedCount, uc));
+			results.add(c);
+		}
+end
+
+rule "Regra R03.3 - Validating usage diff from reported in Invoice"
+	salience 55
+	when
+		NamedDouble ( $name : name -> ($name.startsWith("R03.3-")),
+		 			  $value : value
+		            )
+
+		$furd : FreeUnitsReceiptDetail( $accountID : accountID -> ($name.indexOf($accountID) > 0),
+										$startDate : startDate -> ($name.indexOf($startDate.toString()) > 0),
+										$unitCount : unitCount,
+										$usedCount : unitUsedCount,
+										$description : serviceId
+		                      		  )
+
+		$trd : TIMReceiptDetail ( receiptGroupItems contains $furd )
+
+		Receipt ( details contains $trd,
+				  $carrierCode : carrierCode
+				)
+
+    then
+
+		UnitCounter fuUnitCounter = BGHDataFormats.buildUnitCounter($usedCount);
+		boolean foundError = false;
+
+		if (UnitCounter.DATA_COUNTER.equals(fuUnitCounter.getType())) {
+			UnitCounter otherValue = new UnitCounter(UnitCounter.DATA_COUNTER);
+			otherValue.setUnits($value.longValue());
+			double diff = 0;
+			switch (typeOfDataUsage($usedCount)) {
+			case 1:
+				diff = Math.abs(fuUnitCounter.getKBytes() - otherValue.getKBytes());
+				break;
+			case 2:
+				diff = Math.abs(fuUnitCounter.getMBytes() - otherValue.getMBytes());
+				break;
+			case 3:
+				diff = Math.abs(fuUnitCounter.getGBytes() - otherValue.getGBytes());
+				break;
+			case 4:
+				diff = Math.abs(fuUnitCounter.getTBytes() - otherValue.getTBytes());
+				break;
+			default:
+				diff = Math.abs(fuUnitCounter.getBytes() - otherValue.getBytes());
+			}
+			foundError = (diff > 0.010009);
+		} else {
+			foundError = (fuUnitCounter.getUnits() != $value.longValue());
+		}
+
+		if(foundError) {
+			consequenceBuilder.setRule("R03-3","Aplicação franquia pct/promoção");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription("Soma do benefício das chamadas não confere com o total utilizado presente na fatura.");
+			c.addAttribute("Pacote", $description);
+			UnitCounter uc = BGHDataFormats.buildUnitCounter($unitCount);
+			c.addAttribute("Limite disponível", formatDataUsage($unitCount, uc));
+			c.addAttribute("Uso informado na fatura", formatDataUsage($usedCount, fuUnitCounter));
+			uc.setUnits($value.longValue());
+			c.addAttribute("Uso real total", formatDataUsage($usedCount, uc));
+			results.add(c);
+		}
+end

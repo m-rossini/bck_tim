@@ -1,0 +1,46 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+
+global br.com.auster.tim.billcheckout.util.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results; 
+ 		      
+
+
+rule "Regra DUMPER"
+	salience 0
+	when
+	    #gets the contract section that contais the subsection (Parent of the subsection)
+		$contract : ContractInfoSection( 
+			$contractNo : contractNumber, 
+			$accessNumber : accessNbr )	
+				
+		#gets the usage attached to above subsection and contract section with
+		# the business condition
+		$usage : TIMUsageDetail( 
+			$datetime : datetime, 
+			$dur : usageDuration,
+			$svc : svcId ,
+			$calling : channelId -> ($accessNumber == $calling), 
+			$called : calledNumber,
+			$flags : guidingFlags -> ($flags.isLate() == true)
+			)	 
+		
+	then
+		System.out.println("Call from number " + $calling + "^" + $called + "^" + $datetime + " is late");
+
+end

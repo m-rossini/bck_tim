@@ -1,0 +1,327 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+
+import br.com.auster.om.util.UnitCounter;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+/**
+ * RULE # 1.5 (1.6 & 1.16) Usage Calls (Voice, SMS, Data) Thresholds
+ */
+
+
+/**
+ * Constraints for this RULE:
+ * Usage should be VOICE
+ * TotalAmount should be over the specified UPPER LIMIT
+ */
+rule "Regra 1-5 VOICE UPPER LIMIT"
+	salience 0
+	when
+		TIMUsageDetail (
+		 	microCellDesc == null,
+			voiceUsage  == true,
+			freeUnitIndicator == "N",
+		    discountAmount < 0.001,
+			$amt : totalAmount,
+			totalAmount > 100,
+			# removing AD and DSL
+			type != "AD", type != "DSL", type != "VCR",
+			# removing Tarifa Zero
+			$secName : sectionName -> ($secName.indexOf("Tarifa Zero") < 0),
+			$dur : usageDuration,
+			$callDate : usageDate,
+			$callTime : usageTime,
+			$svcID : serviceDescription,
+			$callerNumber : channelId,
+			$calledNumber : calledNumber
+		 	)
+
+		Account( $carrierCode : carrierCode )
+	then
+		consequenceBuilder.setRule("R01-5","Limite de Valor para Eventos");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso de voz com valor superior ao limite estipulado.");
+
+        c.addDateAttribute("Data da Chamada", $callDate);
+        c.addTimeAttribute("Hora da Chamada", $callTime);
+        c.addAttribute("Duração do Uso", $dur.toString());
+        c.addAttribute("Número de Origem", $callerNumber);
+        c.addAttribute("Número de Destino", $calledNumber);
+        c.addAttribute("Serviço", $svcID);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addDoubleAttribute("Valor Limite", 100);
+
+        results.add(c);
+end
+
+/**
+ * Constraints for this RULE:
+ * Usage should be VOICE
+ * TotalAmount should be lower then the specified LOWER LIMIT
+ */
+rule "Regra 1-5 VOICE LOWER LIMIT"
+	salience 0
+	when
+		TIMUsageDetail (
+			microCellDesc == null,
+			voiceUsage  == true,
+			freeUnitIndicator == "N",
+		    discountAmount < 0.001,
+			$amt : totalAmount,
+			totalAmount < 0.03,
+			# removing AD and DSL
+			type != "AD", type != "DSL", type != "VCR",
+			# removing Tarifa Zero
+			$secName : sectionName -> ($secName.indexOf("Tarifa Zero") < 0),
+			$dur : usageDuration,
+			$callDate : usageDate,
+			$callTime : usageTime,
+			$svcID : serviceDescription,
+			$callerNumber : channelId,
+			$calledNumber : calledNumber
+		 	)
+
+		Account( $carrierCode : carrierCode )
+	then
+		consequenceBuilder.setRule("R01-5","Limite de Valor para Eventos");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso de voz com valor inferior ao limite estipulado.");
+
+        c.addDateAttribute("Data da Chamada", $callDate);
+        c.addTimeAttribute("Hora da Chamada", $callTime);
+        c.addAttribute("Duração do Uso", $dur.toString());
+        c.addAttribute("Número de Origem", $callerNumber);
+        c.addAttribute("Número de Destino", $calledNumber);
+        c.addAttribute("Serviço", $svcID);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addDoubleAttribute("Valor Limite", 0.03);
+
+        results.add(c);
+end
+
+
+/**
+ * Constraints for this RULE:
+ * Usage should be DATA
+ * TotalAmount should be over the specified UPPER LIMIT
+ */
+rule "Regra 1-5 DATA UPPER LIMIT"
+	salience 0
+	when
+		TIMUsageDetail (
+			microCellDesc == null,
+			dataUsage == true,
+			freeUnitIndicator == "N",
+		    discountAmount < 0.001,
+			$amt : totalAmount,
+			totalAmount > 100,
+			# removing Tarifa Zero
+			$secName : sectionName -> ($secName.indexOf("Tarifa Zero") < 0),
+			$dur : usageDuration,
+			$callDate : usageDate,
+			$callTime : usageTime,
+			$svcID : serviceDescription,
+			$callerNumber : channelId,
+			$calledNumber : calledNumber
+		 	)
+
+		Account( $carrierCode : carrierCode )
+	then
+		consequenceBuilder.setRule("R01-5","Limite de Valor para Eventos");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso de dados com valor superior ao limite estipulado.");
+
+        c.addDateAttribute("Data da Chamada", $callDate);
+        c.addTimeAttribute("Hora da Chamada", $callTime);
+        c.addAttribute("Duração do Uso", $dur.toString());
+        c.addAttribute("Número de Origem", $callerNumber);
+        c.addAttribute("Número de Destino", $calledNumber);
+        c.addAttribute("Serviço", $svcID);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addDoubleAttribute("Valor Limite", 100);
+
+        results.add(c);
+end
+
+/**
+ * Constraints for this RULE:
+ * Usage should be DATA
+ * TotalAmount should be lower then the specified LOWER LIMIT
+ */
+rule "Regra 1-5 DATA LOWER LIMIT"
+	salience 0
+	when
+		TIMUsageDetail (
+			microCellDesc == null,
+			dataUsage  == true,
+			freeUnitIndicator == "N",
+		    discountAmount < 0.001,
+			$amt : totalAmount,
+			totalAmount < 0.01,
+			# removing Tarifa Zero
+			$secName : sectionName -> ($secName.indexOf("Tarifa Zero") < 0),
+			$dur : usageDuration,
+			$callDate : usageDate,
+			$callTime : usageTime,
+			$svcID : serviceDescription,
+			$callerNumber : channelId,
+			$calledNumber : calledNumber
+		 	)
+
+		Account( $carrierCode : carrierCode )
+	then
+		consequenceBuilder.setRule("R01-5","Limite de Valor para Eventos");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso de dados com valor inferior ao limite estipulado.");
+
+        c.addDateAttribute("Data da Chamada", $callDate);
+        c.addTimeAttribute("Hora da Chamada", $callTime);
+        c.addAttribute("Duração do Uso", $dur.toString());
+        c.addAttribute("Número de Origem", $callerNumber);
+        c.addAttribute("Número de Destino", $calledNumber);
+        c.addAttribute("Serviço", $svcID);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addDoubleAttribute("Valor Limite", 0.01);
+
+        results.add(c);
+end
+
+/**
+ * Constraints for this RULE:
+ * Usage should be EVENTS
+ * TotalAmount should be over the specified UPPER LIMIT
+ */
+rule "Regra 1-5 EVENT UPPER LIMIT"
+	salience 0
+	when
+		TIMUsageDetail (
+			microCellDesc == null,
+			eventUsage == true,
+			freeUnitIndicator == "N",
+		    discountAmount < 0.001,
+			$amt : totalAmount,
+			# removing Tarifa Zero
+			$secName : sectionName -> ($secName.indexOf("Tarifa Zero") < 0),
+			totalAmount > 4.99,
+			$dur : usageDuration,
+			$callDate : usageDate,
+			$callTime : usageTime,
+			$svcID : serviceDescription,
+			$callerNumber : channelId,
+			$calledNumber : calledNumber
+		 	)
+
+		Account( $carrierCode : carrierCode )
+	then
+		consequenceBuilder.setRule("R01-5","Limite de Valor para Eventos");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso de mensagem com valor superior ao limite estipulado.");
+
+        c.addDateAttribute("Data da Chamada", $callDate);
+        c.addTimeAttribute("Hora da Chamada", $callTime);
+        c.addAttribute("Duração do Uso", $dur.toString());
+        c.addAttribute("Número de Origem", $callerNumber);
+        c.addAttribute("Número de Destino", $calledNumber);
+        c.addAttribute("Serviço", $svcID);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addDoubleAttribute("Valor Limite", 4.99);
+
+        results.add(c);
+end
+
+/**
+ * Constraints for this RULE:
+ * Usage should be EVENT
+ * FUIndicator should be N
+ * TotalAmount should be lower then the specified LOWER LIMIT
+ */
+rule "Regra 1-5 EVENT LOWER LIMIT"
+	salience 0
+	when
+		TIMUsageDetail (
+			microCellDesc == null,
+			eventUsage  == true,
+			freeUnitIndicator == "N",
+		    discountAmount < 0.001,
+			$amt : totalAmount,
+			totalAmount < 0.28,
+			# removing Tarifa Zero
+			$secName : sectionName -> ($secName.indexOf("Tarifa Zero") < 0),
+			$dur : usageDuration,
+			$callDate : usageDate,
+			$callTime : usageTime,
+			$svcID : serviceDescription,
+			$callerNumber : channelId,
+			$calledNumber : calledNumber
+		 	)
+
+		Account( $carrierCode : carrierCode )
+	then
+		consequenceBuilder.setRule("R01-5","Limite de Valor para Eventos");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso de mensagem com valor inferior ao limite estipulado.");
+
+        c.addDateAttribute("Data da Chamada", $callDate);
+        c.addTimeAttribute("Hora da Chamada", $callTime);
+        c.addAttribute("Duração do Uso", $dur.toString());
+        c.addAttribute("Número de Origem", $callerNumber);
+        c.addAttribute("Número de Destino", $calledNumber);
+        c.addAttribute("Serviço", $svcID);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addDoubleAttribute("Valor Limite", 0.28);
+
+        results.add(c);
+end

@@ -1,0 +1,69 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.om.invoice.ChargedTax;
+import br.com.auster.billcheckout.model.TaxRate;
+
+
+import br.com.auster.tim.billcheckout.util.AssociatedFacts;
+
+global br.com.auster.billcheckout.model.cache.TaxRateCache taxRateCache;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+rule "Regra R15.1 - Usage Taxes"
+	salience 70
+	when
+		Account( $carrierCode : carrierCode,
+		         $carrierState : carrierState )
+
+		$usage : TIMUsageDetail ( taxes != null )
+
+	then
+	TaxRate tr = (TaxRate) taxRateCache.getFromCache(TaxRate.createAlternateKey($carrierState, "ICMS", null));
+    if (tr != null) {
+	   for (java.util.Iterator it = $usage.getTaxes().iterator(); it.hasNext();) {
+	      ChargedTax taxInfo = (ChargedTax) it.next();
+	      if (! taxInfo.getTaxName().startsWith("ICMS")) {
+	      	continue;
+		  }
+		  // found ICMS, running validation
+		  if ( Math.abs(  Math.abs(tr.getTaxRate()) - Math.abs(taxInfo.getTaxRate())  ) >= 0.01 ) {
+			consequenceBuilder.setRule("R15-1","ICMS  não confere com UF");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription("A alíquota de ICMS aplicada a este detalhe de uso não confere com a cadastrada na base de referência.");
+	        c.addDateTimeAttribute("Data da Chamada", $usage.getDatetime());
+	        c.addAttribute("Número chamado", $usage.getCalledNumber());
+	        c.addAttribute("Número chamador", $usage.getChannelId());
+	        c.addDoubleAttribute("Valor Total", $usage.getTotalAmount());
+	        c.addAttribute("Duração", $usage.getUsageDuration());
+	        c.addAttribute("Serviço", $usage.getServiceDescription());
+	        c.addAttribute("Tariff Zone", $usage.getTariff());
+			c.addDoubleAttribute("Alíquota Encontrada", taxInfo.getTaxRate());
+			c.addDoubleAttribute("Alíquota Esperada", tr.getTaxRate());
+			results.add(c);
+		  }
+	   }
+	}
+end
+

@@ -1,0 +1,66 @@
+<?xml version = "1.0" encoding = "UTF-8"?>
+<root>
+	<sql:configuration xmlns:sql="http://www.auster.com.br/common/sql/">
+		<sql:statements>
+
+			<sql:statement name="insertQuery">
+				<sql:query>
+					INSERT INTO IMPORT  
+					VALUES ( (SELECT NAME FROM GRADES WHERE ID = ?), ?, ? )
+				</sql:query>
+			</sql:statement>
+
+
+			<sql:statement name="insertIntoServiceRates">
+				<sql:query>
+					INSERT INTO SERVICE_RATES  
+					( SELECT 
+					         a.OBJID, 
+					         b.OBJID,
+					         SYSDATE,
+					         TRUNC(SYSDATE),
+					         ?,
+					         ?,
+					         ?,
+					         NULL, 
+					         NULL,
+					         NULL
+					  FROM 
+					         QLF_PLANS a,
+					         QLF_SERVICES b 
+					  WHERE 
+					         a.DESCRIPTION = ?
+					         AND b.DESCRIPTION = ? )
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="insertIntoServiceRatesFK">
+				<sql:query>
+					INSERT INTO SS   
+					(ACCESS_FEE, ONETIME_RATE, SUBSCRIPTION_RATE, SERVICE_UID, PLAN_UID, EFFECTIVE_DATE,
+					 LOADED_DATE, CUSTOM_1, CUSTOM_2, CUSTOM_3 )
+					VALUES
+					( ?, ?, ?, ?, ?, 
+					  SYSDATE, TRUNC(SYSDATE),
+					  NULL, NULL, NULL )
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="findServiceFK">
+				<sql:query>
+					SELECT OBJID FROM QLF_SERVICES
+					WHERE DESCRIPTION = ?
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="findPlanFK">
+				<sql:query>
+					SELECT OBJID FROM QLF_PLANS
+					WHERE DESCRIPTION = ?
+				</sql:query>
+			</sql:statement>
+
+			
+		</sql:statements>
+	</sql:configuration>
+</root>

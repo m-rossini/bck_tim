@@ -1,0 +1,298 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.tim.billcheckout.util.AssociatedFacts;
+
+import br.com.auster.om.invoice.Receipt;
+import br.com.auster.billcheckout.model.CarrierData;
+import br.com.auster.om.invoice.Address;
+import br.com.auster.om.invoice.Identity;
+import br.com.auster.om.filter.request.BillcheckoutRequestWrapper;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global br.com.auster.billcheckout.model.cache.CarrierDataCache carrierDataCache;
+global java.util.List results;
+
+
+
+
+
+rule "R05.x - Refresh Cache"
+	salience 90
+	when
+		BillcheckoutRequestWrapper ( $request : request )
+	then
+		carrierDataCache.refreshCache($request.getTransactionId());
+end
+
+
+rule "R05-2 - Validating Carrier Name"
+	salience 50
+	when
+		Receipt( $carrierCode : carrierCode,
+		         $carrierState : carrierState,
+		         $carrierName : carrierName,
+		         $local : local )
+
+	then
+		CarrierData cdt = (CarrierData)carrierDataCache.getFromCache(CarrierData.createAlternateKey($carrierCode, $carrierState, $local.booleanValue()));
+		if (cdt != null) {
+			if (($carrierName == null) || (!$carrierName.equals(cdt.getFullName())) ) {
+				consequenceBuilder.setRule("R14-5","Dados da Operadora divergente");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+				c.setDescription("O nome da operadora não coincide com o registrado na tabela de referência.");
+				c.addAttribute("Código da Operadora", $carrierCode);
+				c.addAttribute("Estado", $carrierState);
+				c.addAttribute("Nome da Nota", $carrierName);
+				c.addAttribute("Nome Esperado", cdt.getFullName());
+				results.add(c);
+			}
+		} else {
+			// carrier info not found
+			consequenceBuilder.setRule("R14-5","Dados da Operadora divergente");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription("Não foi encontrado dados desta operadora na tabela de referência.");
+			c.addAttribute("Código da Operadora", $carrierCode);
+			c.addAttribute("Estado", $carrierState);
+			c.addAttribute("Nome da Nota", $carrierName);
+			c.addNullAttribute("Nome Esperado");
+			results.add(c);
+		}
+end
+
+
+
+/**
+ * R05-3 : Validates the address street name
+ */
+rule "R05-3 - Validating Carrier Address : Street name"
+	salience 50
+	when
+		Receipt( $carrierCode : carrierCode,
+		         $carrierState : carrierState,
+		         $local : local,
+		         $addr : address )
+
+	then
+		CarrierData cdt = (CarrierData)carrierDataCache.getFromCache(CarrierData.createAlternateKey($carrierCode, $carrierState, $local.booleanValue()));
+		if (cdt != null) {
+			if (((cdt.getAddressStreet() == null) && ($addr.getAddressStreet() != null)) ||
+		  	    ((cdt.getAddressStreet() != null) && (! cdt.getAddressStreet().equals($addr.getAddressStreet())))
+			   ) {
+					consequenceBuilder.setRule("R14-5","Dados da Operadora divergente");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("O endereço da operadora não coincide com o registrado na tabela de referência.");
+					c.addAttribute("Código da Operadora", $carrierCode);
+					c.addAttribute("Estado", $carrierState);
+					c.addAttribute("Na Nota", $addr.getAddressStreet());
+					c.addAttribute("Valor Esperado", cdt.getAddressStreet());
+					results.add(c);
+			}
+		}
+end
+
+/**
+ * R05-3 : Validates the address street number
+ */
+rule "R05-3 - Validating Carrier Address - Street number"
+	salience 50
+	when
+		Receipt( $carrierCode : carrierCode,
+		         $carrierState : carrierState,
+		         $local : local,
+		         $addr : address )
+
+	then
+		CarrierData cdt = (CarrierData)carrierDataCache.getFromCache(CarrierData.createAlternateKey($carrierCode, $carrierState, $local.booleanValue()));
+		if (cdt != null) {
+			if (((cdt.getAddressNumber() == null) && ($addr.getAddressNumber() != null)) ||
+			    ((cdt.getAddressNumber() != null) && (!cdt.getAddressNumber().equals($addr.getAddressNumber())))
+			   ) {
+					consequenceBuilder.setRule("R14-5","Dados da Operadora divergente");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("O número do endereço não coincide com o registrado na tabela de referência.");
+					c.addAttribute("Código da Operadora", $carrierCode);
+					c.addAttribute("Estado", $carrierState);
+					c.addAttribute("Na Nota", $addr.getAddressNumber());
+					c.addAttribute("Valor Esperado", cdt.getAddressNumber());
+					results.add(c);
+			}
+		}
+end
+
+/**
+ * R05-3 : Validates the address ZIP code
+ */
+rule "R05-3 - Validating Carrier Address - ZIP Code"
+	salience 50
+	when
+		Receipt( $carrierCode : carrierCode,
+		         $carrierState : carrierState,
+		         $local : local,
+		         $addr : address )
+
+	then
+		CarrierData cdt = (CarrierData)carrierDataCache.getFromCache(CarrierData.createAlternateKey($carrierCode, $carrierState, $local.booleanValue()));
+		if (cdt != null) {
+			if (((cdt.getAddressZip() == null) && ($addr.getPostalCode() != null)) ||
+				((cdt.getAddressZip() != null) && (! cdt.getAddressZip().equals($addr.getPostalCode())))
+			   ) {
+					consequenceBuilder.setRule("R14-5","Dados da Operadora divergente");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("O CEP do endereço não coincide com o registrado na tabela de referência.");
+					c.addAttribute("Código da Operadora", $carrierCode);
+					c.addAttribute("Estado", $carrierState);
+					c.addAttribute("Na Nota", $addr.getPostalCode());
+					c.addAttribute("Valor Esperado", cdt.getAddressZip());
+					results.add(c);
+			}
+		}
+end
+
+/**
+ * R05-3 : Validates the address city
+ */
+rule "R05-3 - Validating Carrier Address - City name"
+	salience 50
+	when
+		Receipt( $carrierCode : carrierCode,
+		         $carrierState : carrierState,
+		         $local : local,
+		         $addr : address )
+
+	then
+		CarrierData cdt = (CarrierData)carrierDataCache.getFromCache(CarrierData.createAlternateKey($carrierCode, $carrierState, $local.booleanValue()));
+		if (cdt != null) {
+			if (((cdt.getAddressCity() == null) && ($addr.getCity() != null)) ||
+				((cdt.getAddressCity() != null) && (! cdt.getAddressCity().equals($addr.getCity())))
+			   ) {
+					consequenceBuilder.setRule("R14-5","Dados da Operadora divergente");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("A cidade do endereço não coincide com o registrado na tabela de referência.");
+					c.addAttribute("Código da Operadora", $carrierCode);
+					c.addAttribute("Estado", $carrierState);
+					c.addAttribute("Na Nota", $addr.getCity());
+					c.addAttribute("Valor Esperado", cdt.getAddressCity());
+					results.add(c);
+			}
+		}
+end
+
+
+/**
+ * R05-4 : Validates the CNPJ
+ */
+rule "R05-4 - Validating Carrier CNPJ"
+	salience 50
+	when
+		Receipt( $carrierCode : carrierCode,
+		         $carrierState : carrierState,
+		         $local : local,
+		         $cnpj : CNPJ )
+
+	then
+		CarrierData cdt = (CarrierData)carrierDataCache.getFromCache(CarrierData.createAlternateKey($carrierCode, $carrierState, $local.booleanValue()));
+		if (cdt != null) {
+			if ( ((cdt.getTaxId() == null) && ($cnpj.getIdentityAttrib1() != null)) ||
+			     ((cdt.getTaxId() != null) && (! cdt.getTaxId().equals($cnpj.getIdentityAttrib1())))
+			   ) {
+					consequenceBuilder.setRule("R14-5","Dados da Operadora divergente");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("O CNPJ da operadora não coincide com o registrado na tabela de referência.");
+					c.addAttribute("Código da Operadora", $carrierCode);
+					c.addAttribute("Estado", $carrierState);
+					c.addAttribute("Na Nota", $cnpj.getIdentityAttrib1());
+					c.addAttribute("Valor Esperado", cdt.getTaxId());
+					results.add(c);
+			}
+		}
+end
+
+/**
+ * R05-4 : Validates the IE
+ */
+rule "R05-4 - Validating Carrier IE"
+	salience 50
+	when
+		Receipt( $carrierCode : carrierCode,
+		         $carrierState : carrierState,
+		         $local : local,
+		         $ie : IE )
+
+	then
+		CarrierData cdt = (CarrierData)carrierDataCache.getFromCache(CarrierData.createAlternateKey($carrierCode, $carrierState, $local.booleanValue()));
+		if (cdt != null) {
+			if ( ((cdt.getStateEnrollNumber() == null) && ($ie.getIdentityAttrib1() != null)) ||
+			     ((cdt.getStateEnrollNumber() != null) && (! cdt.getStateEnrollNumber().equals($ie.getIdentityAttrib1())))
+			   ) {
+					consequenceBuilder.setRule("R14-5","Dados da Operadora divergente");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("A inscrição estadual da operadora não coincide com o registrado na tabela de referência.");
+					c.addAttribute("Código da Operadora", $carrierCode);
+					c.addAttribute("Estado", $carrierState);
+					c.addAttribute("Na Nota", $ie.getIdentityAttrib1());
+					c.addAttribute("Valor Esperado", cdt.getStateEnrollNumber());
+					results.add(c);
+			}
+		}
+end

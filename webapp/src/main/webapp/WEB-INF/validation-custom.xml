@@ -1,0 +1,53 @@
+<!DOCTYPE form-validation PUBLIC
+	"-//Apache Software Foundation//DTD Commons Validator Rules Configuration 1.1.3//EN"
+	"http://jakarta.apache.org/commons/dtds/validator_1_1_3.dtd">
+<form-validation>
+	<formset>
+		<form name="packageForm">
+			<field property="shortDescription" depends="required">
+				<arg0 key="shortDescription"/>
+				<msg name="required" key="errors.required" bundle="packages"/>
+			</field>
+			<field property="description" depends="required">
+				<arg0 key="description"/>
+				<msg name="required" key="errors.required" bundle="packages"/>
+			</field>
+		</form>
+		<form name="promotionForm">
+			<field property="shortDesc" depends="required">
+				<arg0 key="shortDesc"/>
+				<msg name="required" key="errors.required" bundle="promotions"/>
+			</field>
+			<field property="description" depends="required">
+				<arg0 key="description"/>
+				<msg name="required" key="errors.required" bundle="promotions"/>
+			</field>
+		</form>		
+		<form name="discountForm">
+			<field property="discountDesc" depends="required">
+				<arg0 key="discountDesc"/>
+				<msg name="required" key="errors.required" bundle="progressiveDiscount"/>
+			</field>
+		</form>
+		<form name="discountTableForm">
+			<field property="rangeName" depends="required">
+				<arg0 key="rangeName"/>
+				<msg name="required" key="errors.required" bundle="progressiveDiscount"/>
+			</field>
+		</form>		
+		<form name="discountRangeForm">
+			<field property="lowerLimit" depends="required">
+				<arg0 key="lowerLimit"/>
+				<msg name="required" key="errors.required" bundle="progressiveDiscount"/>
+			</field>
+			<field property="upperLimit" depends="required">
+				<arg0 key="upperLimit"/>											
+				<msg name="required" key="errors.required" bundle="progressiveDiscount"/>
+			</field>
+			<field property="discountRate" depends="required">
+				<arg0 key="discountRate"/>
+				<msg name="required" key="errors.required" bundle="progressiveDiscount"/>			
+			</field>			
+		</form>		
+	</formset>
+</form-validation>

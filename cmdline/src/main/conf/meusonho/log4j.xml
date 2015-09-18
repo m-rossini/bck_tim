@@ -1,0 +1,38 @@
+<?xml version = "1.0" encoding="UTF-8"?>
+
+<log4j:configuration xmlns:log4j="http://jakarta.apache.org/log4j/">
+
+	<appender name="FILE" class="biz.minaret.log4j.DatedFileAppender">
+		<param name="Threshold" value="DEBUG" />
+		<param name="Directory" value="log" />
+		<param name="Prefix" value="meusonho-" />
+		<param name="Suffix" value=".log" />
+		<param name="Append" value="true" />
+		<layout class="org.apache.log4j.PatternLayout">
+			<param name="ConversionPattern" value="%d{ABSOLUTE} %-5p [(%c{1}) %t] %m%n" />
+		</layout>
+	</appender>
+
+	<appender name="DISCARD" class="biz.minaret.log4j.DatedFileAppender">
+		<param name="Threshold" value="INFO" />
+		<param name="Directory" value="log" />
+		<param name="Prefix" value="meusonho-" />
+		<param name="Suffix" value=".bad" />
+		<param name="Append" value="true" />
+		<layout class="org.apache.log4j.PatternLayout">
+			<param name="ConversionPattern" value="%m%n" />
+		</layout>
+	</appender>
+	
+	
+	<root>
+		<priority value="INFO" />
+		<appender-ref ref="FILE" />
+	</root>
+	
+	<logger name="br.com.auster.tim.billcheckout.loader.validator.DiscardedRowsLogger" additivity="false">
+		<priority value="INFO" />
+		<appender-ref ref="DISCARD" />
+	</logger> 
+</log4j:configuration>
+

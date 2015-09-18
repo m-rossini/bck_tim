@@ -1,0 +1,60 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.TIMUsageGuidingFlag;
+
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+/**
+ *
+ */
+rule "R04-6 - Service not contained in Plan"
+	salience 50
+	when
+		$usage : TIMUsageDetail ( $flag : guidingFlags -> ($flag.isPlanContainsService() == false),
+								  $callerNumber : channelId,
+								  $calledNumber : calledNumber,
+								  $dateTime : datetime,
+								  $callDuration : usageDuration
+		                        )
+		$account : Account( $carrierCode : carrierCode )
+	then
+		consequenceBuilder.setRule("R04-6","Plano não permite serviço");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("O plano desta assinatura não contempla o serviço encontrado.");
+		// getting contract info
+		ContractUsageGroupSubsection usageGroup = (ContractUsageGroupSubsection) $usage.getSection();
+		ContractInfoSection contractInfo = (ContractInfoSection) usageGroup.getParentSection();
+		c.addAttribute("Plano", contractInfo.getRatePlan());
+		c.addAttribute("Serviço", $usage.getServiceDescription());
+		c.addAttribute("ID de Serviço", $usage.getSvcId());
+		c.addAttribute("Número Chamador", $callerNumber);
+		c.addAttribute("Número Chamado", $calledNumber);
+		c.addDateTimeAttribute("Data/Hora Chamada", $dateTime);
+		c.addAttribute("Duração Chamada", $callDuration);
+
+		results.add(c);
+end

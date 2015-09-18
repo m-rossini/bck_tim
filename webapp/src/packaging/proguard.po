@@ -1,0 +1,136 @@
+ -injars "@[user.dir]@/target/classes"(!br/com/auster/**/test/**)
+ -injars "@[auster:auster-commons-web]@"(!br/com/auster/**/test/**)
+ -injars "@[auster:dware-console-actions]@"(!br/com/auster/**/test/**,!br/com/auster/dware/console/queries/**,!br/com/auster/dware/console/request/queue/**)
+ -injars "@[auster:udd]@"(!br/com/auster/**/test/**)
+ -injars "@[auster:matsya-portal]@"(!br/com/auster/**/test/**)
+ -injars "@[auster:security]@"(!br/com/auster/**/*.class)
+
+# Output file
+ -outjars "@[project.currentArtifact]@-@[project.currentVersion]@.jar"
+
+ -libraryjars "@[auster:auster-commons-base]@"(!br/com/auster/**/test/**)
+ -libraryjars "@[javax.servlet:servlet-api]@"
+ -libraryjars "@[javax.servlet:jsp-api]@"
+ -libraryjars "@[javax.servlet:jstl]@"
+ -libraryjars "@[struts:struts]@"
+ -libraryjars "@[commons-lang:commons-lang]@"
+ -libraryjars "@[auster:minerva-interfaces]@"
+ -libraryjars "@[auster:request-base]@"
+ -libraryjars "@[auster:web-request]@"
+ -libraryjars "@[auster:user-base]@"
+ -libraryjars "@[auster:facelift-core]@"
+ -libraryjars "@[auster:security]@"
+ -libraryjars "@[auster:om-reference]@"
+ -libraryjars "@[mondrian:mondrian]@"
+ -libraryjars "@[java.home]@/lib/rt.jar"
+
+ -verbose
+ -dontobfuscate
+ -dontoptimize
+ -overloadaggressively
+
+# provides useful stack traces
+# -printmapping .proguard.mapping
+ -applymapping "@[user.dir]@/../.proguard.mapping"
+ -renamesourcefileattribute SourceFile
+ -keepattributes InnerClasses,SourceFile,LineNumberTable,Deprecated,Signature,Synthetic
+
+##################################################
+# SHARED KEEPS                                   #
+##################################################
+
+# Resource Bundles
+-keepclasseswithmembers class **.res.*
+
+##################################################
+# COMMONS                                        #
+##################################################
+
+# web commons ; tag libs
+-keep class * extends javax.servlet.jsp.tagext.TagSupport {
+	public ** get*();
+    public void set*(**);
+}
+
+-keep class * extends javax.servlet.jsp.tagext.TagExtraInfo {
+	public ** get*();
+    public void set*(**);
+}
+
+-keep class * extends javax.servlet.http.HttpServlet {
+	public void doGet(**);
+    public void doPost(**);
+}
+
+##################################################
+# GENERAL DEFINITIONS                            #
+##################################################
+
+# keep all exceptions
+-keep class * extends java.lang.Exception {
+	public <init>();
+	public <init>(**);
+}
+
+##################################################
+# CONSOLE SHARED                                 #
+##################################################
+
+-keep class br.com.auster.dware.console.commons.* {
+	public static <fields>;
+}
+
+##################################################
+# CONSOLE ACTIONS                                #
+##################################################
+
+-keep public class * implements javax.servlet.Filter {
+        public <methods>;
+}
+
+-keep public class * implements javax.servlet.ServletContextListener {
+        public <methods>;
+}
+
+-keep public class * implements javax.servlet.http.HttpSessionListener {
+        public <methods>;
+}
+
+-keep public class * extends org.apache.struts.action.Action {
+	public <methods>;
+	protected <methods>;
+}
+
+-keep public class * extends org.apache.struts.action.ActionForm {
+	public <methods>;
+}
+
+-keep public class * extends org.apache.struts.action.ExceptionHandler {
+	public ** execute(**);
+}
+
+-keep class br.com.auster.dware.console.error.ExceptionConstants {
+	public static <fields>;
+}
+
+-keep class br.com.auster.dware.console.**.views.* {
+	public <methods>;
+}
+
+##################################################
+# DYN. QUERIES PORTAL                            #
+##################################################
+
+-keep class * implements mondrian.rolap.DynamicSchemaProcessor
+
+-keep class * implements mondrian.olap.CellFormatter
+-keep class * implements mondrian.olap.MemberFormatter
+
+
+
+
+
+
+-keep class br.com.auster.tim.billcheckout.portal.tariff.TariffPagesConstants {
+	public static <fields>;
+}

@@ -1,0 +1,240 @@
+#created on: 12/09/2007
+package br.com.auster.tim.billchekout;
+
+#list any import classes here.
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Receipt;
+import br.com.auster.tim.om.invoice.TIMReceiptDetail;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+import br.com.auster.tim.om.invoice.ServiceReceiptDetail;
+import br.com.auster.tim.om.invoice.FreeUnitsReceiptDetail;
+import br.com.auster.om.invoice.ReceiptDetail;
+import br.com.auster.om.invoice.ChargedTax;
+import br.com.auster.billcheckout.model.TaxRate;
+import br.com.auster.tim.billcheckout.util.NamedBigDecimal;
+import br.com.auster.common.rules.GlobalForLog;
+import br.com.auster.common.lang.NamedDouble;
+import java.math.BigDecimal;
+
+#declare any global variables here
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+rule "Regra 15.3 - Init Named Doubles"
+
+salience 80
+
+when
+
+	$receipt : Receipt ()
+
+then
+
+	assert(new NamedBigDecimal("15.3A" + $receipt.toString(), new BigDecimal("0")));
+
+end
+
+
+rule "Regra 15.3 - Accum. GroupItems"
+
+salience 70
+
+when
+
+		$receiptDetail : GroupItemReceiptDetail( $taxes : taxes, $amount : totalAmount )
+
+		$receiptGroup : TIMReceiptDetail( receiptGroupItems contains $receiptDetail )
+
+		$receipt : Receipt( details contains $receiptGroup )
+
+		$accumulator : NamedBigDecimal( $name : name -> ($name.equals("15.3A" + $receipt.toString())) )
+
+then
+		
+		BigDecimal bd;
+		ChargedTax taxInfo;
+	    for (java.util.Iterator it = $receiptDetail.getTaxes().iterator(); it.hasNext();) {
+	       taxInfo = (ChargedTax) it.next();
+	       if (taxInfo.getTaxName().startsWith("ICMS")) {
+	         GlobalForLog.log("DEBUG", "Accum.GroupItems FiscalCode: "+$receiptDetail.getCaption());
+	         GlobalForLog.log("DEBUG", "TotalAmount: "+$receiptDetail.getTotalAmount()); 
+	      	 $accumulator.addTo($receiptDetail.getTotalAmount());
+	      	 GlobalForLog.log("DEBUG", "TotalAmount: "+$accumulator.getValue().doubleValue());
+		   }
+		}
+
+end
+
+
+rule "Regra 15.3 - Accum. Services"
+
+salience 70
+
+when
+
+		$receiptDetail : ServiceReceiptDetail( $taxes : taxes, $amount : totalAmount )
+
+		$receiptGroup : TIMReceiptDetail( receiptGroupItems contains $receiptDetail )
+
+		$receipt : Receipt( details contains $receiptGroup )
+
+		$accumulator : NamedBigDecimal( $name : name -> ($name.equals("15.3A" + $receipt.toString())) )
+
+then
+		ChargedTax taxInfo;
+	    for (java.util.Iterator it = $receiptDetail.getTaxes().iterator(); it.hasNext();) {
+	       taxInfo = (ChargedTax) it.next();
+	       if (taxInfo.getTaxName().startsWith("ICMS")) {
+	       	 GlobalForLog.log("DEBUG", "Accum.Services FiscalCode: "+$receiptDetail.getCaption());
+	         GlobalForLog.log("DEBUG", "TotalAmount: "+$receiptDetail.getTotalAmount()); 
+	      	 $accumulator.addTo($receiptDetail.getTotalAmount());
+	      	 GlobalForLog.log("DEBUG", "TotalAmount: "+$accumulator.getValue().doubleValue());
+		   }
+		}
+
+end
+
+
+rule "Regra 15.3 - Accum. FreeUnits"
+
+salience 70
+
+when
+
+		$receiptDetail : FreeUnitsReceiptDetail( $taxes : taxes, $amount : totalAmount )
+
+		$receiptGroup : TIMReceiptDetail( receiptGroupItems contains $receiptDetail )
+
+		$receipt : Receipt( details contains $receiptGroup )
+
+		$accumulator : NamedBigDecimal ( $name : name -> ($name.equals("15.3A" + $receipt.toString())) )
+
+then
+		ChargedTax taxInfo;
+	    for (java.util.Iterator it = $receiptDetail.getTaxes().iterator(); it.hasNext();) {
+	       taxInfo = (ChargedTax) it.next();
+	       if (taxInfo.getTaxName().startsWith("ICMS")) {
+	       	 GlobalForLog.log("DEBUG", "Accum.FreeUnit FiscalCode: "+$receiptDetail.getCaption());
+	         GlobalForLog.log("DEBUG", "TotalAmount: "+$receiptDetail.getTotalAmount());  
+	      	 $accumulator.addTo($receiptDetail.getTotalAmount());
+	      	 GlobalForLog.log("DEBUG", "TotalAmount: "+$accumulator.getValue().doubleValue());	      	 
+		   }
+		}
+
+end
+
+
+rule "Regra R15.3 - Comparing the calculated taxableAmount to the current value"
+
+salience 60
+
+	when
+
+		Account( $carrierCode : carrierCode,
+		         $carrierState : carrierState )
+
+		$receipt : Receipt( )
+
+		$accumulator : NamedBigDecimal ( $name : name -> ($name.equals("15.3A" + $receipt.toString())) )
+
+	then
+		ChargedTax taxInfo;
+
+	    for (java.util.Iterator it = $receipt.getTaxes().iterator(); it.hasNext();) {
+	       taxInfo = (ChargedTax) it.next();	       
+	       if (taxInfo.getTaxName().startsWith("ICMS")) {
+		     assert(new NamedDouble("R15.3B" + $receipt.toString(), taxInfo.getTaxRate()/100));
+		     double result = $accumulator.subtractFrom(Math.abs(taxInfo.getTaxableAmount()));				
+			 GlobalForLog.log("DEBUG", "TaxableAmount: "+taxInfo.getTaxableAmount());   
+			 GlobalForLog.log("DEBUG", "accumulator: "+$accumulator.getValue().doubleValue());     
+			 GlobalForLog.log("DEBUG", "difference: "+result);       
+	      	 if (Math.abs(result) > 0.01) {
+				consequenceBuilder.setRule("R15-3","Validação da Base de cálculo");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+				
+				c.setDescription("Base de cálculo não confere com a apresentada na nota fiscal.");
+		        c.addAttribute("Número da NF", $receipt.getReceiptNbr());
+		        c.addDoubleAttribute("Valor total", $receipt.getTotalAmount());
+		        c.addDoubleAttribute("Somatório da base de cálculo", $accumulator.getValue().doubleValue());
+		        c.addDoubleAttribute("Base de cálculo encontrada", taxInfo.getTaxableAmount());
+		        c.addDoubleAttribute("% de ICMS", taxInfo.getTaxRate());
+		        c.addAttribute("Valor calculado do ICMS", "N/A");
+		        c.addDoubleAttribute("Valor encontrado para o ICMS", taxInfo.getTaxAmount());
+				results.add(c);
+	      	 }
+		   }
+
+		}
+
+end
+
+
+rule "Regra R15.3 - Comparing the calculated TaxAmount to the current value"
+
+salience 50
+
+	when
+
+		Account( $carrierCode : carrierCode,
+		         $carrierState : carrierState )
+
+		$receipt : Receipt( )
+
+		$accumulator : NamedBigDecimal ( $nameAccumulator : name -> ($nameAccumulator.equals("15.3A" + $receipt.toString())) )
+
+		$tp : NamedDouble( $nameTp : name -> ($nameTp.equals("R15.3B" + $receipt.toString())) )
+
+	then
+
+		double finalAmount = $accumulator.multiply($tp.getValue());
+		GlobalForLog.log("DEBUG", "accumulator: " + $accumulator.getValue().doubleValue());
+		GlobalForLog.log("DEBUG", "tp.getValue: "+ $tp.getValue());		
+		
+		ChargedTax taxInfo;
+	    for (java.util.Iterator it = $receipt.getTaxes().iterator(); it.hasNext();) {
+	        taxInfo = (ChargedTax) it.next();
+	        if (taxInfo.getTaxName().startsWith("ICMS")) {
+	        	GlobalForLog.log("DEBUG", "(ValorDoImposto)finalAmount: "+finalAmount);  
+			 	GlobalForLog.log("DEBUG", "(ValorDoImposto)TaxAmount(): "+taxInfo.getTaxAmount());     
+			 	double result = $accumulator.subtractFrom(Math.abs(taxInfo.getTaxAmount()));   
+			 	GlobalForLog.log("DEBUG", "difference: "+result);
+	        	//long result = Math.abs((finalAmount) - Math.abs((long)(taxInfo.getTaxAmount()*10*10)));	        	
+				if ( Math.abs(result) > 0.01 ) {
+					consequenceBuilder.setRule("R15-3","Validação da Base de cálculo");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					
+					c.setDescription("Valor do imposto não confere com o apresentado na nota fiscal.");
+					c.addAttribute("Número da NF", $receipt.getReceiptNbr());
+			        c.addDoubleAttribute("Valor total", $receipt.getTotalAmount());
+			        c.addAttribute("Somatório da base de cálculo", "N/A");
+			        c.addDoubleAttribute("Base de cálculo encontrada", taxInfo.getTaxableAmount());
+			        c.addDoubleAttribute("% de ICMS", $tp.getValue());
+			        c.addDoubleAttribute("Valor calculado do ICMS", finalAmount);
+			        c.addDoubleAttribute("Valor encontrado para o ICMS", taxInfo.getTaxAmount());
+					results.add(c);
+				}
+			}
+		}
+
+end

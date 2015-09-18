@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<groovy-data-retriever-config id="setting-transactionId">
+	<data name="set_pdffile">
+		if (request.attributes.format == null) {
+		    request.attributes.format = new HashMap();
+	    }
+		pdffile = "pdfdir/" + request.file.name.substring(0, request.file.name.length()-4) + ".pdf";
+		request.attributes.format.put("aspdf", pdffile);
+	</data>
+</groovy-data-retriever-config>
+

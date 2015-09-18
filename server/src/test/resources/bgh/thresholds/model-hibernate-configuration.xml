@@ -1,0 +1,27 @@
+<?xml version='1.0' encoding='utf-8'?>
+
+<hibernate-configuration>
+
+    <session-factory>
+
+        <property name="show_sql">true</property>
+        <property name="use_outer_join">true</property>
+
+		<property name="connection.driver_class">org.apache.commons.dbcp.PoolingDriver</property>
+		<property name="connection.url">jdbc:apache:commons:dbcp:/bgh/guiding/guidingdb</property>
+
+		<property name="dialect">org.hibernate.dialect.Oracle9Dialect</property>
+
+        <mapping resource="br/com/auster/billcheckout/model/CycleDates.hbm.xml"/>
+		<mapping resource="br/com/auster/billcheckout/thresholds/CustomerType.hbm.xml"/>
+
+        <mapping resource="br/com/auster/billcheckout/thresholds/UsageThreshold.hbm.xml"/>
+        <mapping resource="br/com/auster/billcheckout/thresholds/NFThreshold.hbm.xml"/>
+        <mapping resource="br/com/auster/billcheckout/thresholds/OCCThreshold.hbm.xml"/>
+        <mapping resource="br/com/auster/billcheckout/thresholds/InvoiceThreshold.hbm.xml"/>
+
+        <mapping resource="br/com/auster/billcheckout/consequence/telco/GeographicDimension.hbm.xml"/>
+        <mapping resource="br/com/auster/billcheckout/consequence/telco/CarrierDimension.hbm.xml"/>
+    </session-factory>
+
+</hibernate-configuration>

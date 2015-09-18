@@ -1,0 +1,129 @@
+#created on: 11/10/2007
+package br.com.auster.tim.billchekout
+
+#list any import classes here.
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.UsagePromotionDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.billcheckout.tariff.CachedMicrocellRatesVO;
+import br.com.auster.tim.billcheckout.tariff.MicrocellRatesVO;
+import br.com.auster.om.util.UnitCounter;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+#declare any global variables here
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.tim.billcheckout.tariff.MicrocellRatesCache microcellRatesCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+rule "Regra 19.1 - Validating promotion value"
+	when
+
+		$usage : TIMUsageDetail ( voiceUsage == true,
+								  amountBeforePromotions > 0,
+								  $amountBeforePromotions : amountBeforePromotions,
+								  $amountAfterPromotionsDisc : totalAmount,
+								  discountAmount > 0,
+								  $promotionList : promotionDetails,
+								  $roundedDuration : roundedDuration,
+								  $callDate : usageDate,
+								  $callTime : usageTime,
+								  $contractNumber : contractNumber,
+								  $accessNumber : channelId
+								)
+
+		$account : Account( $carrierCode : carrierCode,
+							$carrierState : carrierState
+				 		  )
+
+	then
+
+		ContractInfoSection contractInfo = (ContractInfoSection) $usage.getSection().getParentSection();
+	
+		for (java.util.Iterator it = $promotionList.iterator(); it.hasNext(); ) {
+
+			UsagePromotionDetail promoDetail = (UsagePromotionDetail) it.next();
+
+			CachedMicrocellRatesVO cachedVO = 
+			 		(CachedMicrocellRatesVO) microcellRatesCache.getFromCache(
+				 			CachedMicrocellRatesVO.createKey( promoDetail.getPromotionPackage(), contractInfo.getRatePlan(), $carrierState ) );
+
+			if ( cachedVO != null ) {
+
+				MicrocellRatesVO rateVO = cachedVO.getMicrocell($callDate);
+				if (rateVO != null) {
+				
+					double priceValue = rateVO.getPriceValue();
+					double scalefactorDbl = rateVO.getScalefactorDbl();
+					String scalefactorStr = rateVO.getScalefactorStr();
+					double result = 0.0;
+					double benefitFound = 0.0;
+					double calculatedValue = 0.0;
+					boolean errorFound = false;
+	
+					if ( priceValue > 0 ) {
+						calculatedValue = priceValue * $roundedDuration.getMinutes();
+						result = calculatedValue - $amountAfterPromotionsDisc.doubleValue();
+						if ( Math.abs(result) >= 0.009 ) {
+							errorFound = true;
+							benefitFound = priceValue;
+							//call function to get the error report
+						}
+					} else if ( scalefactorStr != null && scalefactorStr.length() > 0 ) {
+						if ( scalefactorStr.indexOf(',') != -1 || scalefactorStr.indexOf('.') != -1 ) {
+							calculatedValue = $amountBeforePromotions.doubleValue() * scalefactorDbl;
+							result = calculatedValue - $amountAfterPromotionsDisc.doubleValue();
+							if ( Math.abs(result) >= 0.009 ) {
+								errorFound = true;
+								benefitFound = scalefactorDbl;
+								//call function to get the error report
+							}
+						} else {
+							calculatedValue = (scalefactorDbl/100) * $roundedDuration.getMinutes();
+							result = calculatedValue - $amountAfterPromotionsDisc.doubleValue();
+							if ( Math.abs(result) >= 0.009 ) {
+								errorFound = true;
+								benefitFound = scalefactorDbl;
+								//call function to get the error report
+							}
+						}
+					}
+	
+					if (errorFound) {
+						consequenceBuilder.setRule("R19-1","Valor de promoção incorreto");
+						consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+						consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+						consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+						consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+						consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+	
+						TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+	
+						c.setDescription("Valor cobrado pela chamada não condiz com a tarifa promocional");
+						c.addAttribute("Número do Contrato", $contractNumber);
+						c.addAttribute("Número do Acesso", $accessNumber);
+						c.addDateAttribute("Data da Chamada", $callDate);
+						c.addTimeAttribute("Hora da Chamada", $callTime);
+						c.addAttribute("Duração da Chamada", $usage.getDuration());
+						c.addAttribute("Descrição da Promoção", cachedVO.getDescription());
+						c.addDoubleAttribute("Benefício Encontrado", benefitFound);
+						c.addDoubleAttribute("Valor Calculado", calculatedValue);
+						c.addDoubleAttribute("Valor Cobrado", $amountAfterPromotionsDisc.doubleValue());
+	
+						results.add(c);
+					}
+				} // end if (rateVO != null)
+			} // end if ( cachedVO != null )
+		} // end for...
+end

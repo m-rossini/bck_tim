@@ -1,0 +1,95 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.common.rules.GlobalForLog;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.common.lang.NamedHashMap;
+import br.com.auster.common.lang.NamedDouble;
+
+
+
+
+
+rule "Init "
+	salience 90
+	when
+		not ( NamedDouble ( name == "localcalls" ) )
+	then
+		assert(new NamedDouble("localcalls"));
+		assert(new NamedDouble("longdistance"));
+		assert(new NamedDouble("international"));
+		assert(new NamedDouble("other"));
+		assert(new NamedDouble("all"));
+end
+
+rule "localcalls counter"
+	salience 50
+	when
+		TIMUsageDetail ( localCall == true )
+		$counter : NamedDouble ( name == "localcalls" )
+	then
+		$counter.setValue($counter.getValue() + 1);
+end
+
+rule "longdistance counter"
+	salience 50
+	when
+		TIMUsageDetail ( LDNCall == true )
+		$counter : NamedDouble ( name == "longdistance" )
+	then
+		$counter.setValue($counter.getValue() + 1);
+end
+
+rule "international counter"
+	salience 50
+	when
+		TIMUsageDetail ( LDICall == true )
+		$counter : NamedDouble ( name == "international" )
+	then
+		$counter.setValue($counter.getValue() + 1);
+end
+
+
+rule "other calls"
+	salience 50
+	when
+		TIMUsageDetail ( LDICall == false, LDNCall == false, localCall == false )
+		$counter : NamedDouble ( name == "other" )
+	then
+		$counter.setValue($counter.getValue() + 1);
+end
+
+rule "all calls"
+	salience 50
+	when
+		TIMUsageDetail ( )
+		$counter : NamedDouble ( name == "all" )
+	then
+		$counter.setValue($counter.getValue() + 1);
+end
+
+
+rule "Final Count"
+	salience 10
+	when
+		$counter1 : NamedDouble ( name == "localcalls" )
+		$counter2 : NamedDouble ( name == "longdistance" )
+		$counter3 : NamedDouble ( name == "international" )
+		$counter4 : NamedDouble ( name == "other" )
+		$counter5 : NamedDouble ( name == "all" )
+	then
+		GlobalForLog.log("INFO", "Total local calls " + $counter1.getValue());
+		GlobalForLog.log("INFO", "Total longdistance calls " + $counter2.getValue());
+		GlobalForLog.log("INFO", "Total international calls " + $counter3.getValue());
+		GlobalForLog.log("INFO", "Total Unclassified calls " + $counter4.getValue());
+		GlobalForLog.log("INFO", "Total calls " + $counter5.getValue());
+end
+
+
+rule "dump international"
+	salience 50
+	when
+		$usage : TIMUsageDetail ( destinationCity == "ITALIA" )
+	then
+		GlobalForLog.log("INFO", "International call origin = " + $usage.getOriginAreaCode() + "/" + $usage.getOriginCity());
+		GlobalForLog.log("INFO", "International call destination = " + $usage.getDestinationAreaCode() + "/" + $usage.getDestinationCity());
+end

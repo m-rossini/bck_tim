@@ -1,0 +1,166 @@
+#created on: 17/04/2009
+package br.com.auster.tim.billchekout;
+
+import java.util.List;
+import java.util.Iterator;
+import java.lang.String;
+import java.util.Date;
+
+import br.com.auster.tim.om.invoice.FreeUnitsReceiptDetail;
+import br.com.auster.tim.om.invoice.UsageFUDetail;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.common.rules.GlobalForLog;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;;
+import br.com.auster.billcheckout.consequence.DimensionCache;
+import br.com.auster.tim.billcheckout.param.PackageVO;
+
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.om.filter.request.BillcheckoutRequestWrapper;
+import br.com.auster.tim.om.invoice.TIMReceiptDetail;
+import br.com.auster.tim.billcheckout.param.TariffZoneCache;
+import br.com.auster.tim.billcheckout.param.TariffZoneVO;
+import br.com.auster.billcheckout.caches.CacheableKey;
+import br.com.auster.common.lang.NamedHashMap;
+
+#declare any global variables here
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global br.com.auster.tim.billcheckout.param.TariffZoneCache tariffZoneCache;
+global br.com.auster.tim.billcheckout.param.PackageCache packageCache;
+global java.util.List results;
+
+function TelcoConsequence buildR31Consequence(DimensionCache dimensionCache, TelcoConsequenceBuilder consequenceBuilder, String code, 
+		 String carrierCode, String carrierState, String custCode, String description, Date endDate, String plan, String serviceName,
+		 String numberCalled,Date dateCalled, Date timeCalled) {
+		
+		consequenceBuilder.setRule(code,"Validação de Chamadas INFINITY");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache(carrierCode));
+	
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription(description); 
+		c.addAttribute("Plano", plan);
+		c.addAttribute("Tipo da Chamada", serviceName);
+		c.addAttribute("Número chamado", numberCalled);
+		c.addAttribute("Data da Chamada", dateCalled, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Hora da Chamada", timeCalled, ConsequenceAttributeList.AttributeType.TIME);
+
+		return c;
+}
+
+rule "R31-1 - Invalid Infinity Call"
+salience 50
+	when
+		$usage : TIMUsageDetail ( voiceUsage  == true,
+								  discountAmount <= 0,
+								  $duration : roundedDuration,
+								  $callDuration : usageDuration,
+							      $tariffClass : tariffClass,
+								  $tariffZone : tariff,
+								  $date : usageDate,
+						 		  $time : usageTime,
+						 		  $calledNumber : calledNumber 
+		                        )
+		$account : Account( $carrierCode : carrierCode,
+							$carrierState : carrierState,
+							$custCode : accountNumber )
+							
+		$inv : Invoice(	$cycleEndDate : cycleEndDate)
+
+	then
+		
+		if ((($duration != null) && ($duration.getUnits() == 60) &&
+		       ($callDuration != null) && ($callDuration.getUnits() >= 61)) ||
+		     (($tariffClass != null) && ($tariffClass.equals("IFY")))) {
+		
+			TariffZoneVO vo = (TariffZoneVO) tariffZoneCache.getFromCache(TariffZoneVO.createAlternateKey($tariffZone));
+			
+			// Se chamada não possuir marcação no TariffZone, ele é off-net
+			if ((vo != null && (vo.getCustom1() == null || !vo.getCustom1().equals("T")))) {
+			
+				results.add(buildR31Consequence(dimensionCache, consequenceBuilder, "R31-1", $carrierCode, 
+					$carrierState, $custCode, "Chamada off-net obtendo benefício INFINITY.", $cycleEndDate, $usage.getRatePlan(),
+					$usage.getSection().getSectionName(), $calledNumber, $date, $time));
+			}
+		}
+end
+
+
+/* NamedHashMap usada para marcar contratos já criticados pela regra R31-2
+ * Isto é necessário para que apenas uma crítica seja gerada por contrato,
+ * independente do número de chamadas que se encaixem no cenário em questão.
+ */
+rule "R31-2-INIT"
+salience 90
+	when
+		not ( NamedHashMap(name == "infinityFlag") )
+	then
+		NamedHashMap packageInfinity = new NamedHashMap("infinityFlag");
+		assert(packageInfinity);
+end
+
+rule "R31-02 - Incomplete Infinity Package Usage"
+salience 50
+	when
+		$fu : FreeUnitsReceiptDetail ( $package : serviceId, 
+										tag == "34000100",
+										$contractNumber : contractNumber
+									 )
+
+		$usage : TIMUsageDetail ( voiceUsage  == true,
+								  discountAmount <= 0,
+								  freeUnitIndicator != "F",
+								  totalAmount > 0,
+								  $tariffZone : tariff,
+								  contractNumber == $contractNumber,
+								  $date : usageDate,
+						 		  $time : usageTime,
+						 		  $calledNumber : calledNumber
+		                        )
+
+		$account : Account( $carrierCode : carrierCode,
+							$carrierState : carrierState,
+							$custCode : accountNumber )
+							
+		$inv : Invoice(	$cycleEndDate : cycleEndDate)
+							
+		$infinityFlag : NamedHashMap( name == "infinityFlag" )
+	then
+		TariffZoneVO tariffVO = (TariffZoneVO) tariffZoneCache.getFromCache(TariffZoneVO.createAlternateKey($tariffZone));
+		PackageVO packVO = (PackageVO) packageCache.getFromCache(PackageVO.createAlternateKey($fu.getServiceId()));
+		// Se existir pacote de minutos compatível com o benefício INFINITY
+		if (packVO != null && packVO.getCustom2() != null &&  packVO.getCustom2().equals("T")) {
+			
+			// Se Pacote de franquias não foi totalmente consumido
+			if ($fu.getUnitUnusedCount() != null && ($fu.getUnitUnusedCount().compareTo("00:00:00") > 0)) {
+				
+				// Se chamada possuir marção no TariffZone e estiver no dentro do período do pacote INFINITY
+				if ((tariffVO != null && tariffVO.getCustom1() != null && tariffVO.getCustom1().equals("T")) &&
+				    ($usage.getUsageDate().compareTo($fu.getStartDate()) >= 0) && ($usage.getUsageDate().compareTo($fu.getEndDate()) <= 0)) {
+				
+					if (!$infinityFlag.containsKey($contractNumber)) {
+						$infinityFlag.put($contractNumber, null);
+					
+						results.add(buildR31Consequence(dimensionCache, consequenceBuilder, "R31-1", $carrierCode, 
+							$carrierState, $custCode, "Benefício INFINITY de franquia atribuído a menor.", $cycleEndDate, $usage.getRatePlan(),
+							$usage.getSection().getSectionName(), $calledNumber, $date, $time));
+					}
+				}
+			}
+		}
+end

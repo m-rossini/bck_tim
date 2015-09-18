@@ -1,0 +1,109 @@
+package br.com.auster.tim.billcheckout
+
+#list any import classes here
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.billcheckout.consequence.DimensionCache;
+
+import br.com.auster.common.lang.NamedHashMap;
+
+import br.com.auster.om.util.UnitCounter;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.tim.om.invoice.FreeUnitsReceiptDetail;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.UsageFUDetail;
+import br.com.auster.tim.billcheckout.tariff.megatim.MegaTIMActivation;
+import br.com.auster.tim.billcheckout.tariff.MegaTIMVO;
+import br.com.auster.tim.billcheckout.param.ContractServicesPeriodVO;
+import br.com.auster.tim.billcheckout.param.CustomerSituationVO;
+
+import java.util.Iterator;
+
+#declare any global variables here
+global java.util.List results;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global br.com.auster.tim.billcheckout.tariff.MegaTIMCache megatimCache;
+global br.com.auster.tim.billcheckout.param.ContractServicesPeriodCache contractServicesPeriodCache;
+
+
+
+
+##################
+#
+#
+# Regras R34.2
+#
+#
+##################
+
+rule "R34.1 - Find configured Megatim package"
+salience 90
+when
+	FreeUnitsReceiptDetail ( $fuid : accountID,
+						 	 $packageName : serviceId, 
+							 $coid : contractNumber != null,
+							 $accNumber : accessNbr )
+							 
+	ContractInfoSection ( contractNumber == $coid,
+						  $rateplan : ratePlan )
+							 
+	Account ( $carrierState : carrierState,
+			  $carrierCode : carrierCode )
+	
+then
+
+	MegaTIMVO vo = (MegaTIMVO) megatimCache.getFromCache( MegaTIMVO.createKey($carrierState, $packageName) );
+	if (vo != null) {
+
+		ContractServicesPeriodVO svcVo = (ContractServicesPeriodVO) 
+						contractServicesPeriodCache.getFromCache( ContractServicesPeriodVO.createAlternateKey($coid, String.valueOf(vo.getSncode())) );
+
+		if (svcVo != null) {
+			MegaTIMActivation activationVo = new MegaTIMActivation( $fuid, $coid, svcVo.getActivationDate() );
+			activationVo.setMegaTIMVO(vo);
+			assert(activationVo);
+		} else {
+			consequenceBuilder.setRule("R34-2","Benefícios da Promoção Mega TIM");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+			c.setDescription("A promoção MegaTIM não está ativada para este contrato.");
+			c.addAttribute("Número do contrato", $coid);
+			c.addAttribute("Número do acesso", $accNumber);
+			c.addAttribute("Plano", $rateplan);
+			c.addAttribute("Pacote MegaTIM", $packageName);
+			c.addNullAttribute("Valor Cobrado");
+			c.addNullAttribute("Valor Calculado");
+
+			results.add(c);
+		}	
+	} 
+end
+
+
+rule "R34.1 - Init. R34.1 NamedHashMap"
+salience 90
+when
+
+	ContractInfoSection ( $coid : contractNumber )
+
+	not ( NamedHashMap ( $name : name -> (("R34.2-"+$coid).equals($name)) ) )
+then
+	assert(new NamedHashMap("R34.2-"+$coid));
+end
+

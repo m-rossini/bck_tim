@@ -1,0 +1,7 @@
+<global name="" class-name="" 
+		lazy-cache="true" use-alternate="true" cache-size="50">
+	<database pool-name="bgh/guiding/guidingdb">
+		<alternate-pool name="S2" value="bgh/guiding/testPool" />								
+		<alternate-pool name="S3" value="bgh/guiding/testPool2" />
+	</database>
+</global>

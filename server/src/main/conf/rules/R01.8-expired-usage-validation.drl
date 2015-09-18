@@ -1,0 +1,88 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+/**
+ * RULE # 1.8 Verificação de Decurso de Prazo de Cobrança de Uso
+ */
+
+rule "Regra 1-8"
+	salience 0
+	when
+		Invoice( $base : dueDate -> ($base != null) )
+
+		TIMUsageDetail (
+			$calledNo : calledNumber,
+			$callingNo : channelId,
+			$amt : totalAmount,
+			$dur : usageDuration ,
+			usageDate != null,
+			$date : usageDate,
+			$flags : guidingFlags -> ( $flags.isExpired() ),
+			$LDICall : LDICall,
+			$LDNCall : LDNCall,
+			$localCall : localCall,
+			$svcID : serviceDescription,
+			$originCity : originCity,
+			$destinationCity : destinationCity,
+			$tariffZone : tariff,
+			$contractNo : contractNumber )
+
+		Account( $accCarrier : carrierCode )
+
+		eval( $localCall.booleanValue() || $LDNCall.booleanValue() || $LDICall.booleanValue() )
+	then
+		consequenceBuilder.setRule("R01-8","Item faturado c/decurso prazo");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($accCarrier));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+		String type;
+		if ($localCall.booleanValue()) {
+			type = "local ";
+		} else {
+			if ($LDICall.booleanValue()) {
+				type = "LDI " + ($flags.isCobilling() ? "com" : "sem") + " co-billing ";
+			} else {
+				type = "LDN " + ($flags.isCobilling() ? "com" : "sem") + " co-billing ";
+			}
+		}
+		c.setDescription("Chamada " + type + "em decurso de prazo.");
+
+        c.addAttribute("Contrato", $contractNo);
+        c.addAttribute("Data Vencimento", $base, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Data da Chamada", $date, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Número chamado", $calledNo);
+        c.addAttribute("Número chamador", $callingNo);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addAttribute("Duração do Uso", $dur.toString());
+        c.addAttribute("Serviço do Uso", $svcID);
+        c.addAttribute("Tariff Zone", $tariffZone);
+		c.addAttribute("Origem", $originCity);
+		c.addAttribute("Destino", $destinationCity);
+        results.add(c);
+end
+

@@ -1,0 +1,252 @@
+<?xml version = "1.0" encoding="UTF-8"?>
+<data-aware>
+	<log4j:configuration xmlns:log4j="http://jakarta.apache.org/log4j/">
+		<appender name="FILE" class="biz.minaret.log4j.DatedFileAppender">
+			<param name="Threshold" value="DEBUG" />
+			<param name="Directory" value="/appl/billcheckout/log" />
+			<param name="Prefix" value="credcorp-" />
+			<param name="Suffix" value=".log" />
+			<param name="Append" value="false" />
+			<layout class="org.apache.log4j.PatternLayout">
+				<param name="ConversionPattern" value="%d{ABSOLUTE} %-5p [(%c{1}) %t] %m%n" />
+			</layout>
+		</appender>
+
+		<root>
+			<priority value="INFO" />
+			<appender-ref ref="FILE" />
+		</root>
+	</log4j:configuration>
+
+	<sql:configuration xmlns:sql="http://www.auster.com.br/common/sql/">
+		<sql:database name="sql/billcheckoutdb">
+			<sql:statements path="conf/sql/billcheckout-sql.xml"/>
+			<sql:statements path="conf/sql/checkpoint-sql.xml"/>
+		</sql:database>
+		<sql:database name="sql/guidingdb">
+			<sql:statements path="conf/sql/guiding-sql.xml"/>
+		</sql:database>
+		<sql:database name="sql/bscspredb">
+			<sql:statements path="conf/sql/bscs-sql.xml"/>
+		</sql:database>
+		<sql:database name="sql/bscsproddb">
+			<sql:statements path="conf/sql/bscs-sql.xml"/>
+		</sql:database>
+	</sql:configuration>
+
+	<requests:configuration xmlns:requests="http://www.auster.com.br/dware/requests/">
+
+		<builder name="bgh" class-name="br.com.auster.dware.request.file.FileRequestBuilder">
+			<config bufferSize="262244" encoding="ISO-8859-1" maxRecordSize="2048" record-delimiter="\n"
+				field-delimiter="^" request-create-type="FileRequest">
+				<record-key index="1" position="1" length="8" trim="false" new-request-pattern="00000000" />
+				<request-key record-key-pattern="00000000">
+					<field name="key" index="9" position="1" length="8" type="java.lang.String" />
+				</request-key>
+				<record key="00000000">
+					<field name="custCode" index="9" />
+				</record>
+			</config>
+		</builder>
+		<builder-chain name="default">
+			<builder name="bgh" />
+		</builder-chain>
+		<builder-chain name="webportal">
+			<builder name="bgh" />
+		</builder-chain>
+	</requests:configuration>
+
+	<dw:configuration name="invoice" xmlns:dw="http://www.auster.com.br/dware/">
+
+		<dw:mbean mbean-component="DataAware" mbean-class-name="br.com.auster.dware.monitor.dware.JMXDWare"
+			pass-reference="true" />
+
+		<dw:startup-listener class-name="br.com.auster.tim.billcheckout.listener.CredcorpStartupListener"
+			xmlns:dw="http://www.auster.com.br/dware/"/>
+
+		<dw:graph-manager>
+
+			<dw:mbean mbean-component="GraphManager"
+				mbean-class-name="br.com.auster.dware.monitor.manager.JMXGraphManager" pass-reference="true" />
+
+			<dw:mbean mbean-component="graph" mbean-class-name="br.com.auster.dware.monitor.graph.JMXGraph"
+				pass-reference="true" />
+
+			<dw:local-graph-group name="group-01" max-graphs="12" max-weight="10000000">
+				<dw:mbean mbean-component="PriorityQueueWishGraphGroup"
+					mbean-class-name="br.com.auster.dware.monitor.manager.JMXPriorityWishGraphGroup" pass-reference="true" />
+			</dw:local-graph-group>
+
+			<dw:local-graph-group name="group-02" max-graphs="1" max-weight="10000001">
+				<dw:mbean mbean-component="PriorityQueueWishGraphGroup"
+					mbean-class-name="br.com.auster.dware.monitor.manager.JMXPriorityWishGraphGroup" pass-reference="true" />
+			</dw:local-graph-group>
+
+			<dw:request-forwarder class-name="br.com.auster.dware.manager.FIFOQueueReqForwarder" />
+
+		</dw:graph-manager>
+
+		<dw:graph-design>
+
+			<dw:filter name="InputFromFile" class-name="br.com.auster.dware.filter.PartialInputFromFileList">
+				<dw:config buffer-size="16384" file-cache-size="10" />
+				<dw:connect-to name="Pipe" />
+			</dw:filter>
+
+			<dw:filter name="Pipe" class-name="br.com.auster.dware.filter.PipeFilter">
+				<dw:connect-to name="BGH2XML" />
+			</dw:filter>
+
+			<dw:filter name="BGH2XML" class-name="br.com.auster.dware.filter.XMLReaderFilter">
+				<dw:config class-name="br.com.auster.udd.reader.TaggedFileReader">
+					<dw:xml-reader udd-path="bgh/ifd-udd.xml" quiet-missing="true" encrypted="false" />
+				</dw:config>
+				<dw:connect-to name="RequestDropper" />
+			</dw:filter>
+
+            <!-- Checks to see if the request is above a given threshold -->
+            <dw:filter name="RequestDropper" class-name="br.com.auster.dware.filter.CHLimiterPipeFilter">
+                 <dw:config max-size="25000000" pct-deviation="0" ignore-exception="false">
+                 </dw:config>
+                 <dw:connect-to name="InvoiceLoader" />
+            </dw:filter>
+
+			<dw:filter name="InvoiceLoader" class-name="br.com.auster.om.filter.InvoiceLoaderFilter">
+				<dw:config>
+					<dw:object-list-tag name="invoice-om" />
+					<dw:invoice-loader class-name="br.com.auster.tim.bgh.sax.TIMOMLoader">
+						<xml-paths>
+							<!-- Handles Invoice and Account Block -->
+							<path value="/IFD/GeneralInformation"
+								handler="br.com.auster.tim.bgh.sax.InvoiceAndAccountHandler" />
+
+							<!-- Handles NF for TIM -->
+							<path value="/IFD/GeneralInformation/NFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFHeaderHandler" />
+							<path value="/IFD/GeneralInformation/NFHeader/ServicesSummary"
+								handler="br.com.auster.tim.bgh.sax.TIMNFSubscriptionHandler" />
+							<path value="/IFD/GeneralInformation/NFHeader/ServicesSummary"
+								handler="br.com.auster.tim.bgh.sax.NFContractServicesHandler" />
+							<path value="/IFD/GeneralInformation/NFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFGroupAndItemsHandler" />
+							<path value="/IFD/GeneralInformation/NFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFOCCGroupHandler" />
+							<path value="/IFD/GeneralInformation/NFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFFreeUnitHandler" />
+							<path value="/IFD/GeneralInformation/SummaryOfNotasFiscais"
+								handler="br.com.auster.tim.bgh.sax.IndividualNFHandler" />
+							<path value="/IFD/GeneralInformation/TaxSummary"
+								handler="br.com.auster.tim.bgh.sax.NFTaxesHandler" />
+
+							<path value="/IFD/GeneralInformation/RetentionTaxes"
+								handler="br.com.auster.tim.bgh.sax.NFTaxesHandler" />
+
+							<!-- Handles NF for Long Distance Carriers -->
+							<path value="/IFD/GeneralInformation/LDCNFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFHeaderHandler" />
+							<path value="/IFD/GeneralInformation/LDCNFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFGroupAndItemsHandler" />
+							<path value="/IFD/GeneralInformation/LDCNFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFOCCGroupHandler" />
+							<path value="/IFD/GeneralInformation/LDCNFHeader/Services"
+								handler="br.com.auster.tim.bgh.sax.NFContractServicesHandler" />
+							<path value="/IFD/GeneralInformation/LDCNFHeader"
+								handler="br.com.auster.tim.bgh.sax.NFFreeUnitHandler" />
+							<path value="/IFD/GeneralInformation/LDCNFHeader/TaxSummary"
+								handler="br.com.auster.tim.bgh.sax.NFTaxesHandler" />
+
+							<!-- Handles Paystub Block -->
+							<path value="/IFD/GeneralInformation/PayStubInformation"
+								handler="br.com.auster.tim.bgh.sax.PaystubHandler" />
+
+							<!-- Handles Details Block -->
+							<path value="/IFD/GeneralInformation/Details"
+								handler="br.com.auster.tim.bgh.sax.InvoiceDetailsHandler" />
+							<path value="/IFD/GeneralInformation/Details/ContractInfo"
+								handler="br.com.auster.tim.bgh.sax.InvoiceContractDetailsHandler" />
+							<path value="/IFD/GeneralInformation/Details/ContractInfo/UsageGroup"
+								handler="br.com.auster.tim.bgh.sax.ContractUsageGroupHandler" />
+							<path value="/IFD/GeneralInformation/Details/ContractInfo/UsageGroup/OneCall"
+								handler="br.com.auster.tim.bgh.sax.ContractUsageDetailsHandler" />
+
+							<!-- Handles TotalsPerContract Block -->
+							<path value="/IFD/GeneralInformation/ContractSubscription"
+								handler="br.com.auster.tim.bgh.sax.TotalsPerContractHandler" />
+							<path value="/IFD/GeneralInformation/ContractServices"
+								handler="br.com.auster.tim.bgh.sax.TotalsPerContractHandler" />
+							<path value="/IFD/GeneralInformation/ContractOCC"
+								handler="br.com.auster.tim.bgh.sax.TotalsPerContractHandler" />
+							<path value="/IFD/GeneralInformation/ContractDiscounts"
+								handler="br.com.auster.tim.bgh.sax.TotalsPerContractHandler" />
+							<path value="/IFD/GeneralInformation/ContractFU"
+								handler="br.com.auster.tim.bgh.sax.TotalsPerContractHandler" />
+							<path value="/IFD/GeneralInformation/ContractTotal"
+								handler="br.com.auster.tim.bgh.sax.TotalsPerContractHandler" />
+						</xml-paths>
+					</dw:invoice-loader>
+
+				</dw:config>
+				<dw:connect-to name="RulesFilter" />
+			</dw:filter>
+
+			<dw:filter name="RulesFilter" class-name="br.com.auster.om.filter.InvoiceRulesEngineFilter">
+				<dw:config>
+					<dw:input-list-tag name="invoice-om" />
+					<dw:results-map-tag name="results"/>
+					<dw:rules-engine class-name="br.com.auster.billcheckout.drools.Drools3RulesEngineProcessor"
+									 debug="false"
+									 dump-rete="false"
+									 output-file="log/rulesout.log">
+                        <dw:rules-file file-name="rules/credcorp/INIT-collection.drl" encrypted="false" />
+                        <dw:rules-file file-name="rules/credcorp/R01.40-crash-program-collection.drl" encrypted="false" />
+						<dw:rules-file file-name="rules/credcorp/R03.x-fu-collection.drl" encrypted="false" />
+                        <dw:rules-file file-name="rules/credcorp/R04.3-credcorp-collection.drl" encrypted="false" />
+					</dw:rules-engine>
+					<dw:globals-list>
+						<!--
+							Projeto: MELHORIAS03 
+						 -->
+						<dw:global name="planCache" class-name="br.com.auster.tim.billcheckout.param.PlansCache"
+ 					        lazy-cache="true" use-alternate="true" cache-size="1000">
+                            <database pool-name="sql/guidingdb"/>
+						</dw:global>
+						<dw:global name="crashCustCodesCache" class-name="br.com.auster.tim.billcheckout.crashprogram.CrashProgramCustCodesCache"
+							lazy-cache="true" use-alternate="false" cache-size="100">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+						<dw:global name="crashPackageInfoCache" class-name="br.com.auster.tim.billcheckout.crashprogram.CrashProgramPackageInfoCache"
+							lazy-cache="true" use-alternate="false" cache-size="100">
+							<database pool-name="sql/bscspredb">
+								<alternate-pool name="S3" value="sql/bscsproddb" />
+							</database>
+						</dw:global>
+					</dw:globals-list>
+				</dw:config>
+				<dw:connect-to name="XStreamSaver" />
+			</dw:filter>
+
+			<dw:filter name="XStreamSaver" class-name="br.com.auster.om.filter.XStreamSerializerFilter">
+				<dw:config input-list-tag="results" ignore-empty="false"/>
+				<dw:connect-to name="OutputToFile" />
+			</dw:filter>
+
+			<dw:filter name="OutputToFile" class-name="br.com.auster.dware.filter.OutputToFile">
+				<dw:config prefix="/appl/billcheckout/output/credcorp/" suffix=".xml.gz">
+					<dw:filename>
+						<dw:token>
+							<dw:insert-request-field name="custCodeWithSlashes" />
+						</dw:token>
+						<dw:token>/</dw:token>
+						<dw:token>credcorp</dw:token>
+					</dw:filename>
+				</dw:config>
+			</dw:filter>
+
+
+		</dw:graph-design>
+	</dw:configuration>
+
+</data-aware>
+

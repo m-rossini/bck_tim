@@ -1,0 +1,111 @@
+package br.com.auster.tim.billchekout;
+
+import java.util.Date;
+import java.util.Iterator;
+import java.util.Set;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+function boolean shouldDiscardUsage_R01_18(TIMUsageDetail _detail) {
+
+	if (_detail == null) { return true; }
+	
+	boolean result = (! _detail.isVoiceUsage());
+	result = result ||  ( "AC".equals(_detail.getType())  || "AD".equals(_detail.getType()) || 
+	                      "DSL".equals(_detail.getType()) || "VCR".equals(_detail.getType()) );
+	result = result || ( "CRIOU".equals(_detail.getTariff()) || "CRIIN".equals(_detail.getTariff()) );
+	result = result || _detail.getGuidingFlags().isCobilling();
+	result = result || (_detail.getDatetime() == null);
+	result = result || (_detail.getChannelId() == null);
+	result = result || (_detail.getCalledNumber() == null);
+	result = result || ( (_detail.getUsageDuration() == null) || (_detail.getUsageDuration().getSeconds() <= 30) );
+	return result;
+}
+
+rule "Regra 01-18 - Chamadas Fatiadas"
+	salience 60	 
+	when
+		Account( $carrierCode : carrierCode )
+	
+		# gets the subsection (container of TIMUsageDetail)		
+		$group : ContractUsageGroupSubsection (
+			$secName : sectionName,
+			$contractNo : contractNumber,			
+			$details : details -> ( ($details != null) && ($details.size() > 1) ) )	
+
+    then
+    	TIMUsageDetail[] arrayOfUsages = (TIMUsageDetail[])$details.toArray( new TIMUsageDetail[] {} );
+    	// validating until the one before the last
+    	int currentIdx=0;
+    	for (; currentIdx < arrayOfUsages.length-1; currentIdx++) {
+	    	// usage currently under validation
+	    	TIMUsageDetail detailA = arrayOfUsages[currentIdx];
+	    	// if current usage should really be validated
+			if ( shouldDiscardUsage_R01_18(detailA) ) {
+				continue;
+			}
+	    	for (int nextIdx=currentIdx+1; nextIdx < arrayOfUsages.length; nextIdx++) {
+		    	// usage to check if its a slice from detailA
+		    	TIMUsageDetail detailB = arrayOfUsages[nextIdx];
+		    	// if we reach the following condition, we do not need to continue validating for detailA
+		    	if ( detailB.getDatetime().after(detailA.getEndDatetime()) ) {
+		    		break;
+		    	}
+		    	// if current usage should really be validated
+				if ( shouldDiscardUsage_R01_18(detailB) ) {
+					continue;
+				}
+				
+				// now, both details are ilegible for validation. Validating callingNumber
+				if (! detailA.getChannelId().equals(detailB.getChannelId()) ) {
+					continue;
+				}
+				// callingNumber attributes are equal; now validating calledNumber
+				if (! detailA.getCalledNumber().equals(detailB.getCalledNumber()) ) {
+					continue;
+				}
+				// calledNumbers are equal too; running final validation
+				if ( detailB.getDatetime().equals(detailA.getEndDatetime()) ) {
+					consequenceBuilder.setRule("R01-18","Chamadas fatiadas (2 Min.)");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("Foram encontradas chamadas fatiadas.");
+					c.addAttribute("Nome da Seção", detailA.getSectionName());
+					c.addAttribute("Número Chamador", detailA.getChannelId());
+					c.addAttribute("Número Chamado", detailA.getCalledNumber());
+					c.addDateTimeAttribute("Data/Horário 1", detailA.getDatetime());
+					c.addAttribute("Duração 1", detailA.getUsageDuration());
+					c.addDateTimeAttribute("Data/Horário 2", detailB.getDatetime());
+					c.addAttribute("Duração 2", detailB.getUsageDuration());
+					results.add(c);
+				}
+			} // end of inner for-loop
+    	} // end of outter for-loop
+end

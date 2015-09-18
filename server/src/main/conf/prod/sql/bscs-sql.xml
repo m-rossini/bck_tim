@@ -1,0 +1,692 @@
+<?xml version = "1.0" encoding = "UTF-8"?>
+<root>
+	<sql:configuration xmlns:sql="http://www.auster.com.br/common/sql/">
+
+	<sql:statements>
+
+		<sql:statement name="FreeUnitHelper.AnyNonMatchingScenario">
+			<sql:query>
+				SELECT
+					COUNT(*), FSC.SERVICE_CODE, RATE_TYPE_CODE, FSC.SERVICE_PACKAGE_CODE,
+					FSC.TARIFF_ZONE_CODE, FSC.ORIGIN_CODE, FSC.DESTINATION_CODE,
+					FSC.TARIFF_TIME_CODE, FSC.TYPE_OF_DAY_CODE, FSC.TIME_INTERVAL_CODE,
+				      FSC.MICRO_CELL_CODE, FSC.MICRO_CELL_HANDLING, FSC.MICRO_CELL_TYPE,
+				      FSC.CALL_TYPE_CODE, FSC.CALL_ORIGIN, FSC.DROPPED_CALLS, 	FSC.RTX_CHARGE_TYPE, FSC.USAGE_INDICATOR, FSC.RATE_PLAN_CODE,
+				      FSC.LOGICAL_ZONE_CODE, FSC.CHARGEABLE_QUANTITY, FSC.ZERO_CHARGED
+				FROM
+					FUP_SELECT_CRITERIA FSC, FUP_VERSION FV, FU_PACK FP
+				WHERE
+					FP.SHORT_NAME IN ( ?, ? )
+				      AND    FP.FU_PACK_ID = FSC.FU_PACK_ID
+				      AND    FSC.FUP_VERSION = FV.FUP_VERSION
+				      AND    FSC.FU_PACK_ID = FSC.FU_PACK_ID
+				      AND    FV.FUP_VERSION = ( SELECT MAX(FV1.FUP_VERSION)
+				                                   FROM   FUP_VERSION FV1
+				                                   WHERE  FV1.FU_PACK_ID = FV.FU_PACK_ID )
+					AND    FV.WORK_STATE = 'P'
+					AND    FV.FU_PACK_ID = FP.FU_PACK_ID
+					AND    FSC.SELECTION_TYPE = 'I'
+				GROUP BY
+					FSC.SERVICE_CODE, RATE_TYPE_CODE, FSC.SERVICE_PACKAGE_CODE,
+					FSC.TARIFF_ZONE_CODE, FSC.ORIGIN_CODE, FSC.DESTINATION_CODE,
+					FSC.TARIFF_TIME_CODE, FSC.TYPE_OF_DAY_CODE, FSC.TIME_INTERVAL_CODE,
+				      FSC.MICRO_CELL_CODE, FSC.MICRO_CELL_HANDLING, FSC.MICRO_CELL_TYPE,
+				      FSC.CALL_TYPE_CODE, FSC.CALL_ORIGIN, FSC.DROPPED_CALLS, 	FSC.RTX_CHARGE_TYPE, FSC.USAGE_INDICATOR, FSC.RATE_PLAN_CODE,
+				      FSC.LOGICAL_ZONE_CODE, FSC.CHARGEABLE_QUANTITY, FSC.ZERO_CHARGED
+				HAVING
+					COUNT(*) &lt; 2
+			</sql:query>
+			<sql:param index="1" type="String" />
+			<sql:param index="2" type="String" />
+		</sql:statement>
+
+		<sql:statement name="FreeUnitHelper.ConsumptionOrder">
+			<sql:query>
+				SELECT
+					SHORT_NAME, APPL_METHOD, PROCESS_ORDER
+				FROM
+					FU_PACK A, FUP_VERSION B
+				WHERE
+					A.REC_VERSION = B.REC_VERSION
+					AND   A.FU_PACK_ID = B.FU_PACK_ID
+					AND (
+				            ( A.SHORT_NAME = ? AND
+				              B.FUP_VERSION = ( SELECT MAX(FV1.FUP_VERSION)
+				                                   FROM   FUP_VERSION FV1
+				                                   WHERE  FV1.FU_PACK_ID = A.FU_PACK_ID )
+				            )
+				            OR
+				            ( A.SHORT_NAME = ? AND
+				              B.FUP_VERSION = ( SELECT MAX(FV1.FUP_VERSION)
+				                                   FROM   FUP_VERSION FV1
+				                                   WHERE  FV1.FU_PACK_ID = A.FU_PACK_ID )
+				            )
+				    	    )
+				ORDER BY
+					APPL_METHOD DESC, PROCESS_ORDER ASC
+			</sql:query>
+			<sql:param index="1" type="String" />
+			<sql:param index="2" type="String" />
+		</sql:statement>
+
+		<sql:statement name="OCCContractBreakCache.loadCache">
+			<sql:query>
+				SELECT DISTINCT REMARK FROM CBCF.ACC_CBCF_OCC@DBINT WHERE COD_TIPO_OCC = 3
+			</sql:query>
+		</sql:statement>
+
+		<sql:statement name="CBCFContractDAO.loadCache">
+			<sql:query>
+
+				SELECT B.VLR_PRO_RATA, B.NUM_PARCELAS_TOTAL, A.DSC_MOTIVO_FINALIZACAO
+        		FROM   cbcf.ACC_CBCF_FIDELIZACAO_OCC_HIST@dbint B,
+    				   cbcf.ACC_CBCF_FIDELIZACAO_HIST@dbint C,
+    				   cbcf.ACC_CBCF_MOTIVO_FINALIZACAO@dbint A
+    			WHERE  B.COD_FIDELIZACAO = C.COD_FIDELIZACAO
+        			   AND C.COD_MOTIVO_FINALIZACAO = A.COD_MOTIVO_FINALIZACAO
+        			   AND B.COD_TIPO_OCC = 3
+        			   AND C.CUSTOMER_ID = ?
+        			   AND B.VLR_PRO_RATA IS NOT NULL
+        			   AND B.FEE_SEQNO IS NOT NULL
+        			   AND trunc(DAT_ENVIO_BSCS) &gt;= TO_DATE(?, 'dd/mm/yy')
+        			   AND trunc(DAT_ENVIO_BSCS) &lt;= TO_DATE(?, 'dd/mm/yy')
+				UNION
+				SELECT B.VLR_PRO_RATA, B.NUM_PARCELAS_TOTAL, C.DSC_MOTIVO_FINALIZACAO
+    			FROM   cbcf.ACC_CBCF_FIDELIZACAO_HIST_CF@dbint A,
+        			   cbcf.ACC_CBCF_FIDELIZ_OCC_HIST_CF@dbint B,
+        			   cbcf.ACC_CBCF_MOTIVO_FINALIZACAO@dbint C
+    			WHERE  A.COD_FIDELIZACAO = B.COD_FIDELIZACAO
+        			   AND C.COD_MOTIVO_FINALIZACAO = A.COD_MOTIVO_FINALIZACAO
+        			   AND A.CUSTOMER_ID = ?
+        			   AND A.COD_STATUS = 3
+        			   AND B.VLR_PRO_RATA IS NOT NULL
+        			   AND B.FEE_SEQNO IS NOT NULL
+        			   AND trunc(DAT_ENVIO_BSCS) &gt;= TO_DATE(?, 'dd/mm/yy')
+        			   AND trunc(DAT_ENVIO_BSCS) &lt;= TO_DATE(?, 'dd/mm/yy')
+
+			<!--
+				SELECT 	VLR_PARCELA, B.NUM_PARCELAS_TOTAL
+				FROM 	ACC_CBCF_FIDELIZACAO_VERSAO A,
+					 	ACC_CBCF_FIDELIZACAO_OCC_HIST B,
+					 	ACC_CBCF_FIDELIZACAO C
+				WHERE 	A.COD_FIDELIZACAO = B.COD_FIDELIZACAO
+						AND B.COD_FIDELIZACAO = C.COD_FIDELIZACAO
+		    			AND A.COD_STATUS = 3
+		    			AND A.USERNAME = 'CBCF_QUE'
+		    			AND C.CUSTOMER_ID = ?
+		    			AND DAT_ENVIO_BSCS &gt;= ? AND DAT_ENVIO_BSCS &lt;= ?
+		    	 UNION
+				SELECT 	B.VLR_PARCELA, B.NUM_PARCELAS_TOTAL
+				FROM 	ACC_CBCF_FIDELIZACAO_HIST_CF A,
+						ACC_CBCF_FIDELIZ_OCC_HIST_CF B
+				WHERE 	A.COD_FIDELIZACAO = B.COD_FIDELIZACAO
+						AND A.CUSTOMER_ID = ?
+						AND A.COD_STATUS = 3
+						AND B.DAT_ENVIO_BSCS &gt;= ? AND B.DAT_ENVIO_BSCS &lt;= ?
+			 -->
+			</sql:query>
+			<sql:param index="1" type="String" />
+			<sql:param index="2" type="Date" />
+			<sql:param index="3" type="Date" />
+			<sql:param index="4" type="String" />
+			<sql:param index="5" type="Date" />
+			<sql:param index="6" type="Date" />
+		</sql:statement>
+
+
+		<sql:statement name="UsageGroupingCache.loadCache">
+			<sql:query>
+				SELECT DISTINCT CSP_ID, MICROCELL, SERVICE, TZCODE, FU.SHORT_NAME, TYPE_IND, NETWORK_IND, NAME
+				FROM BGH_USAGE_GROUPING_1 BGH1
+			    JOIN BGH_USAGE_GROUPING_2 BGH2 ON BGH1.ID = BGH2.ID
+			    LEFT JOIN FU_PACK FU ON BGH2.FU_PACK_ID = FU.FU_PACK_ID
+			    ORDER BY CSP_ID, MICROCELL, SERVICE, TZCODE, FU.SHORT_NAME, TYPE_IND, NETWORK_IND
+			</sql:query>
+		</sql:statement>
+
+		<sql:statement name="PenaltyInterestLocalNFCache.loadCache">
+			<sql:query>
+				SELECT SUM(AMOUNT), MAX(CUSTOMER_ID), MAX(DUE_DATE)
+				FROM
+				(
+					SELECT
+						A.TIM_VALUE AS AMOUNT, A.CUSTOMER_ID, TO_CHAR(B.OHDUEDATE, 'dd/MM/yy') AS DUE_DATE
+					FROM
+						ORDER_INVOICE A, ORDERHDR_ALL B
+			    	WHERE
+			    		A.OHXACT = B.OHXACT
+			    		AND A.CUSTOMER_ID =  ?
+			    		AND TO_CHAR(B.OHDUEDATE, 'dd/MM/yy') = ?
+					UNION
+					SELECT
+						A.INVOICE_VALUE AS AMOUNT, B.CUSTOMER_ID, TO_CHAR(C.OHDUEDATE, 'dd/MM/yy') AS DUE_DATE
+					FROM
+						ORDER_CSP_INVOICE A, ORDER_INVOICE B, ORDERHDR_ALL C
+			    	WHERE
+			    		A.INVOICE_ID = B.INVOICE_ID
+			    		AND B.OHXACT = C.OHXACT
+			    		AND B.CUSTOMER_ID =  ?
+			    		AND TO_CHAR(C.OHDUEDATE, 'dd/MM/yy') = ?
+			    		AND A.CSP_ID = 41
+				)
+		    </sql:query>
+			<sql:param index="1" type="String" />
+			<sql:param index="2" type="String" />
+		</sql:statement>
+
+		<sql:statement name="PenaltyInterestLDNFCache.loadCache">
+			<sql:query>
+				SELECT
+					A.INVOICE_VALUE, B.CUSTOMER_ID, TO_CHAR(C.OHDUEDATE, 'dd/MM/yy'), A.CSP_ID
+				FROM
+					ORDER_CSP_INVOICE A, ORDER_INVOICE B, ORDERHDR_ALL C
+		    	WHERE
+		    		A.INVOICE_ID = B.INVOICE_ID
+		    		AND B.OHXACT = C.OHXACT
+		    		AND B.CUSTOMER_ID = ?
+		    		AND TO_CHAR(C.OHDUEDATE, 'dd/MM/yy') = ?
+		    		AND A.CSP_ID = ?
+		    </sql:query>
+			<sql:param index="1" type="String" />
+			<sql:param index="2" type="String" />
+			<sql:param index="3" type="String" />
+		</sql:statement>
+		
+		<!-- R30 -->
+		<sql:statement name="ContractServicesPeriodCache.loadCache">
+			<sql:query>
+				SELECT
+					CS.SNCODE, CS.CO_ID, CS.CS_STAT_CHNG
+				FROM
+					CONTR_SERVICES CS
+				WHERE
+					CO_ID = ?
+					AND SNCODE = ?
+					AND (CS.CO_ID, CS_SEQNO) = ( SELECT CS.CO_ID, MAX(C.CS_SEQNO)
+									             FROM CONTR_SERVICES C
+									             WHERE C.CO_ID = CS.CO_ID 
+									                AND C.SNCODE = CS.SNCODE )
+		    </sql:query>
+			<sql:param index="1" type="String" />
+			<sql:param index="2" type="String" />
+		</sql:statement>
+		
+		<sql:statement name="ContractServicesCache.loadCache">
+			<sql:query>
+				SELECT
+					A.SNCODE, A.CO_ID, A.CS_STAT_CHNG, A.TMCODE
+				FROM
+					CONTR_SERVICES A
+				WHERE
+					A.CO_ID = ?
+					AND A.TMCODE = ?
+					AND A.SNCODE IN (%)
+					AND (A.CO_ID, A.CS_SEQNO) = ( SELECT A.CO_ID, MAX(C.CS_SEQNO)
+									              FROM CONTR_SERVICES C
+									              WHERE C.TMCODE = A.TMCODE
+									 	            AND C.CO_ID = A.CO_ID
+									 	            AND C.SNCODE = A.SNCODE )
+		    </sql:query>
+			<sql:param index="1" type="String" />
+			<sql:param index="2" type="Long" />
+			<sql:param index="3" type="String" />
+		</sql:statement>
+
+		<sql:statement name="ContractServicesDAO.selectService">
+			<sql:query>
+				SELECT DISTINCT
+					CO_ID, SPCODE, SNCODE, TMCODE, CS_STAT_CHNG, CS_DATE_BILLED, PRM_VALUE_ID, SHDES
+				FROM
+					(SELECT
+							a.CO_ID, a.SPCODE, a.SNCODE, a.TMCODE, a.CS_STAT_CHNG, a.CS_DATE_BILLED, PRM_VALUE_ID, b.SHDES
+					 FROM
+					 		CONTR_SERVICES a
+					 		JOIN MPUSNTAB b ON a.SNCODE = b.SNCODE
+					 WHERE
+					 		a.CO_ID = ?
+					 		AND a.CS_DATE_BILLED is null
+					 ORDER BY
+					 		CS_SEQNO DESC
+					)
+		    </sql:query>
+			<sql:param index="1" type="String" />
+		</sql:statement>
+
+		<sql:statement name="DwPromoMcCache.loadCache">
+			<sql:query>
+				SELECT
+					DISTINCT A.SHDES, B.COD_SERVICO_OLTP
+				FROM
+					INTERDW.DWPROMO_MC A, INTERDW.DWPROMO_SN B
+				WHERE
+				    A.COD_PROMOCAO_OLTP = B.COD_PROMOCAO_OLTP
+					AND SHDES = ?
+		    </sql:query>
+			<sql:param index="1" type="String" />
+		</sql:statement>
+
+
+		<sql:statement name="Mpulktmb.loadCache">
+			<sql:query>
+				SELECT
+				    TMCODE, SPCODE, SNCODE, SUBSCRIPT
+				FROM
+				    MPULKTMB a
+				WHERE
+					a.TMCODE = ?
+				    AND a.SPCODE = ?
+				    AND a.SNCODE = ?
+					AND a.VSCODE = ( SELECT MAX(VSCODE)
+				                           FROM MPULKTMB
+				                           WHERE TMCODE = a.TMCODE
+				                                AND SPCODE = a.SPCODE
+				                                AND SNCODE = a.SNCODE
+				                    )
+		    </sql:query>
+			<sql:param index="1" type="String" />
+			<sql:param index="2" type="String" />
+			<sql:param index="3" type="String" />
+		</sql:statement>
+
+
+		<sql:statement name="MpulkpvbCache.loadCache">
+			<sql:query>
+				SELECT M.EVENT,
+				       SN.SNCODE,
+				       M.SPCODE,
+				       M.TMCODE,
+				       M.PV_COMBI_ID
+				  FROM mpulktmb m,
+				       mpusntab sn
+				 WHERE M.SNCODE = SN.SNCODE
+				   AND M.TMCODE = ?
+				   AND M.SPCODE = ?
+				   AND M.SNCODE = ?
+				   AND M.EVENT >0
+				   AND M.SNCODE IN (20, 37, 36, 100, 221, 222, 223, 224, 225, 226, 227, 228, 597)
+				   AND M.PV_COMBI_ID IS NULL
+				   AND M.VSCODE = (SELECT MAX(M1.VSCODE)
+				                      FROM MPULKTMB M1
+				                     WHERE M1.TMCODE = M.TMCODE AND M1.SPCODE = M.SPCODE AND
+				                           M1.SNCODE = M.SNCODE)
+				GROUP BY M.TMCODE, SN.SNCODE, M.SPCODE, SN.DES, SN.SHDES, M.PV_COMBI_ID, M.EVENT, M.VSCODE
+				UNION
+				SELECT M.SUBSCRIPT,
+				       SN.SNCODE,
+				       M.SPCODE,
+				       M.TMCODE,
+				       M.PV_COMBI_ID
+				  FROM mpulktmb m,
+				       mpusntab sn
+				 WHERE M.SNCODE = SN.SNCODE
+				   AND M.TMCODE = ?
+				   AND M.SPCODE = ?
+				   AND M.SNCODE = ?
+				   AND M.SUBSCRIPT > 0
+				   AND M.PV_COMBI_ID IS NULL
+				   AND M.VSCODE = (SELECT MAX(M1.VSCODE)
+				                      FROM MPULKTMB M1
+				                     WHERE M1.TMCODE = M.TMCODE AND M1.SPCODE = M.SPCODE AND
+				                           M1.SNCODE = M.SNCODE)
+				GROUP BY M.TMCODE, SN.SNCODE, M.SPCODE, SN.DES, SN.SHDES, M.PV_COMBI_ID, M.SUBSCRIPT, M.VSCODE
+				UNION
+				SELECT M1.SUBSCRIPT,
+				       SN.SNCODE,
+				       M.SPCODE,
+				       M.TMCODE,
+				       M.PV_COMBI_ID
+				  FROM mpulktmb m,
+				       mpulkpvb m1,
+				       mpusntab sn,
+				       mpulkpvm pvm,
+				       fu_pack fp
+				 WHERE m.sncode = sn.sncode
+				   AND M.TMCODE = ?
+				   AND M.SPCODE = ?
+				   AND M.SNCODE = ?
+				   AND m1.subscript >0
+				   AND m1.pv_combi_id = m.pv_combi_id
+				   AND m1.pv_combi_id= pvm.pv_combi_id
+				   AND fp.fu_pack_id = pvm.prm_value_number
+				   AND m.pv_combi_id = pvm.pv_combi_id
+				   AND m1.vscode = pvm.vscode
+				   AND m1.set_id = pvm.set_id
+				   AND m1.pv_combi_id = pvm.pv_combi_id
+				   AND m1.VSCODE = (SELECT MAX(m3.VSCODE)
+				                    FROM mpulkpvm m3
+				                   WHERE m3.pv_combi_id = m1.pv_combi_id
+				                     AND EXISTS (SELECT vm.pv_combi_id
+				                                  FROM mpulkpvm vm
+				                                 WHERE vm.pv_combi_id = m3.pv_combi_id
+				                                HAVING COUNT(vm.pv_combi_id) >1
+				                                 GROUP BY vm.pv_combi_id))
+				 GROUP BY M.TMCODE, SN.SNCODE, M.SPCODE, SN.DES, SN.SHDES, PVM.PRM_VALUE_NUMBER,
+				          FP.SHORT_NAME, FP.LONG_NAME, PVM.SET_ID, M.PV_COMBI_ID, M1.SUBSCRIPT, M1.VSCODE
+				UNION
+				SELECT M1.SUBSCRIPT,
+				       SN.SNCODE,
+				       M.SPCODE,
+					   M.TMCODE,
+				       M.PV_COMBI_ID
+				  FROM mpulktmb m,
+				       mpulkpvb m1,
+				       mpusntab sn,
+				       mpulkpvm pvm,
+				       fu_pack fp
+				 WHERE m.sncode = sn.sncode
+				   AND M.TMCODE = ?
+				   AND M.SPCODE = ?
+				   AND M.SNCODE = ?
+				   AND m1.subscript >0
+				   AND m.pv_combi_id = m1.pv_combi_id
+				   AND m.pv_combi_id = pvm.pv_combi_id
+				   AND pvm.pv_combi_id = m1.pv_combi_id
+				   AND fp.fu_pack_id = pvm.prm_value_number
+				   AND m.VSCODE = (SELECT MAX(M2.VSCODE)
+				                     FROM mpulkpvb M2
+				                    WHERE m2.pv_combi_id = m.pv_combi_id)
+				                      AND m1.VSCODE = (SELECT MAX(M3.VSCODE)
+				                                         FROM mpulkpvb M3
+				                                        WHERE m3.pv_combi_id = m1.pv_combi_id)
+				  AND NOT EXISTS (SELECT vm.pv_combi_id
+				                    FROM mpulkpvm vm
+				                   WHERE vm.pv_combi_id = m1.pv_combi_id
+				            HAVING COUNT(vm.pv_combi_id) >1
+				            GROUP BY vm.pv_combi_id)
+				 GROUP BY M.TMCODE, SN.SNCODE, M.SPCODE, SN.DES, SN.SHDES, PVM.PRM_VALUE_NUMBER,
+				          FP.SHORT_NAME, FP.LONG_NAME, PVM.SET_ID, M.PV_COMBI_ID, M1.SUBSCRIPT, M1.VSCODE
+			 <!--
+				SELECT  pvb.SUBSCRIPT,
+				        tmb.SNCODE,
+				        tmb.SPCODE,
+				        tmb.TMCODE,
+				        pv.PRM_VALUE_ID
+				FROM    MPULKPVM pvm,
+				        MPULKPVB pvb,
+				        PARAMETER_VALUE pv,
+				        MPULKTMB tmb
+				WHERE
+				        pv.PRM_VALUE_ID = ?
+				        AND tmb.TMCODE = ?
+				        AND tmb.SPCODE = ?
+				        AND tmb.SNCODE = ?
+				        AND pvm.PRM_VALUE_NUMBER = pv.PRM_VALUE_NUMBER
+				        AND pvm.PV_COMBI_ID = pvb.PV_COMBI_ID
+				        AND pvm.SET_ID = pvb.SET_ID
+				        AND tmb.PV_COMBI_ID = pvb.PV_COMBI_ID
+				        AND pvm.VSCODE = ( SELECT  MAX(VSCODE)
+				                           FROM    MPULKPVM pvm1
+				                           WHERE   pvm.PV_COMBI_ID = pvm1.PV_COMBI_ID
+				                         )
+				        AND pvb.VSCODE = ( SELECT  MAX(VSCODE)
+				                           FROM    MPULKPVB pvb1
+				                           WHERE   pvb.PV_COMBI_ID = pvb1.PV_COMBI_ID
+				                         )
+				        AND tmb.VSCODE = ( SELECT MAX(VSCODE)
+				                           FROM MPULKTMB
+				                           WHERE TMCODE = tmb.TMCODE
+				                                AND SPCODE = tmb.SPCODE
+				                                AND SNCODE = tmb.SNCODE
+				                         )
+				 -->
+			</sql:query>
+			<sql:param index="1" type="String" />
+			<sql:param index="2" type="String" />
+			<sql:param index="3" type="String" />
+			<sql:param index="4" type="String" />
+		</sql:statement>
+
+
+		<sql:statement name="RateplanHistCache.loadCache">
+			<sql:query>
+				SELECT
+					TMCODE, TMCODE_DATE, CO_ID
+				FROM
+					RATEPLAN_HIST
+				WHERE
+				    CO_ID = ?
+				ORDER BY
+					TMCODE_DATE
+		    </sql:query>
+			<sql:param index="1" type="String" />
+		</sql:statement>
+
+		<sql:statement name="ContractPromotionsCache.loadCache">
+			<sql:query>
+				SELECT /*+ parallel (b,8) */
+					B.CO_ID, B.SHDES, E.DAT_INICIO_PROMO, E.DAT_FIM_PROMO, B.DES
+				FROM
+					INTERDW.DWPROMO_CAT E, INTERDW.DWPROMO_MC D, MPUFFTAB B
+				WHERE
+					( E.DAT_FIM_PROMO > TO_DATE ('01/06/2007 00:00:00','DD/MM/YYYY HH24:MI:SS')
+					  OR E.DAT_FIM_PROMO IS NULL
+					)
+					AND D.COD_PROMOCAO_OLTP = E.COD_PROMOCAO_OLTP
+					AND D.SHDES = B.SHDES
+					AND B.CO_ID = ?
+		    </sql:query>
+			<sql:param index="1" type="String" />
+		</sql:statement>
+		
+		<!-- R33.1 Query 2 -->
+		<sql:statement name="EligibilityFlatCache.loadCache">
+			<sql:query>
+				select 	COD_PROMO, IND_ESTRUTURA, COD_PLANO_INDIVIDUAL, 
+						COD_SERV_INDIVIDUAL, COD_PCTE_INDIVIDUAL, COD_PLANO_LA,
+						COD_SERV_LA, COD_PCTE_LA, COD_SERV_DESVIO, VLR_DESVIO,
+						DATA_INICIO_VIGENCIA, DATA_FIM_VIGENCIA
+				from  PDA.ACC_PDA_ELEGIBILIDADE@DBINT 
+				where COD_PLANO_INDIVIDUAL like ? 
+				and IND_ESTRUTURA = 'F'
+				and COD_PLANO_LA is null 
+				and COD_SERV_LA is null
+				and COD_PCTE_LA is null
+		    </sql:query>
+			<sql:param index="1" type="String" />
+		</sql:statement>
+		
+		<!-- R33.1 Query 3 -->
+		<sql:statement name="EligibilityLACache.loadCache">
+			<sql:query>
+				select 	COD_PROMO, IND_ESTRUTURA, COD_PLANO_INDIVIDUAL, 
+						COD_SERV_INDIVIDUAL, COD_PCTE_INDIVIDUAL, COD_PLANO_LA,
+						COD_SERV_LA, COD_PCTE_LA, COD_SERV_DESVIO, VLR_DESVIO,
+						DATA_INICIO_VIGENCIA, DATA_FIM_VIGENCIA
+				from  PDA.ACC_PDA_ELEGIBILIDADE@DBINT 
+				where (COD_PLANO_INDIVIDUAL like ? or COD_PLANO_INDIVIDUAL is null)
+				and IND_ESTRUTURA='L'
+		    </sql:query>
+			<sql:param index="1" type="String" />
+		</sql:statement>
+		
+		<!-- R33.1 Query 4 -->
+		<sql:statement name="VerifyServiceIndiv.loadCache">
+			<sql:query>
+				select cs.co_id, cs.sncode , cs.prm_value_id, cs.cs_stat_chng, mp.shdes, mp.des 
+  				from contr_services cs, mpusntab mp 
+ 				where cs.co_id = ?
+   				and mp.shdes = ?
+   				and cs.cs_seqno =(select max(cs1.cs_seqno) 
+                     			  from contr_services cs1 
+                     			  where cs1.co_id = cs.co_id 
+                     			  and cs1.sncode = cs.sncode 
+                    			  and mp.sncode = cs.sncode
+                     		      )
+		    </sql:query>
+			<sql:param index="1" type="String" />
+			<sql:param index="2" type="String" />
+		</sql:statement>
+		
+		<!-- R33.1 Query 5 -->
+		<sql:statement name="VerifyPcteIndiv.loadCache">
+			<sql:query>
+				select fu.short_name, fu.long_name 
+				from parameter_value pv, fu_pack fu
+				where pv.prm_value_id = ?
+				and fu.short_name = ?
+				and parameter_id = 40
+				and pv.prm_no = 1
+				and pv.prm_value_number = fu.fu_pack_id
+				and pv.prm_seqno = (select max(pv1.prm_seqno)
+                    				from parameter_value pv1
+                    				where pv1.prm_value_id = pv.prm_value_id
+                    				and pv1.prm_valid_from &lt; to_date(?, 'dd/mm/yy')
+                    				)
+		    </sql:query>
+			<sql:param index="1" type="Long" />
+			<sql:param index="2" type="String" />
+			<sql:param index="3" type="Date"   />
+		</sql:statement>
+		
+		<!-- R33.1 Query 6-A - COD_PLANO_LA nao nulo OU Query 6-B COD_PLANO_LA e COD_SERV_LA nao nulos 
+			 Esta query eh complementada posteriormente em codigo Java -->
+		<sql:statement name="ScanLevelLA_QAB.loadCache">
+			<sql:query>
+				select distinct cu.customer_id, co.co_id, cs.sncode, sn.des, sn.SHDES,
+		    	tm.tmcode, tm.DES, tm.shdes, cu.cslevel
+				from customer_all cu, contract_all co, contr_services cs,
+     				 mpusntab sn, mputmtab tm
+				where cu.customer_id = co.customer_id
+				and   co.co_id = cs.co_id
+				and   cs.cs_seqno = (select max(cs1.cs_seqno) from contr_services cs1 where cs1.co_id = cs.co_id)
+				and   cs.sncode = sn.sncode
+				and   tm.vscode = (select max(tm1.vscode)from mputmtab tm1 where tm1.tmcode = tm.tmcode)
+				and   cs.tmcode = tm.tmcode
+				and   cu.custcode in 
+				<!--
+				and   cu.custcode in (?)
+				and   tm.shdes in (?)  
+				and   sn.shdes = ? -> caso COD_SERV_LA != null
+				-->
+			</sql:query>
+		</sql:statement>
+		                             
+		<!-- R33.1 Query 6-C Esta query eh complementada posteriormente em codigo Java -->
+		<sql:statement name="ScanLevelLA_QC.loadCache">
+			<sql:query>
+				select distinct cu.customer_id, co.co_id, cs.sncode, sn.des, sn.shdes,
+		    		   fu.fu_pack_id, fu.long_name, fu.short_name, tm.tmcode,
+		               tm.des, tm.shdes, cu.cslevel
+				from customer_all cu, contract_all co, contr_services cs,
+     				 mpusntab sn, mputmtab tm, parameter_value pa, fu_pack fu 
+				where cu.customer_id = co.customer_id
+				and   co.co_id = cs.co_id
+				and   cs.prm_value_id = pa.prm_value_id
+				and   cs.cs_seqno = (select max(cs1.cs_seqno) from contr_services cs1 where
+				               		 cs1.co_id = cs.co_id)
+				and   cs.sncode = sn.sncode
+				and   tm.vscode = (select max(tm1.vscode) from mputmtab tm1 where tm1.tmcode = tm.tmcode)
+				and   pa.prm_value_number = fu.fu_pack_id
+				and   cs.tmcode = tm.tmcode
+				and   pa.prm_seqno = (select max(pa1.prm_seqno)from parameter_value pa1 where pa1.prm_value_id = pa.prm_value_id)
+				and   cu.custcode in 
+				<!-- 
+				and   cu.custcode in (?)
+				and   tm.shdes in (?)
+				and   sn.shdes = ?
+				and   fu.short_name = ?
+				 -->
+		    </sql:query>
+		</sql:statement>                             
+
+		<sql:statement name="AnatelCodeCache.nonLazy">
+			<sql:query>
+				SELECT DESC_PLANO, DESC_PCT, ESTADO, CODIGO_ANATEL  
+			 	FROM SYSADM.ACC_BGH_ANATEL_CONFIG
+	 			WHERE DESC_PLANO = ?
+	       		AND DESC_PCT||'-' = ?||'-'
+	       		AND ESTADO = ?
+		    </sql:query>
+			<sql:param index="1" type="String" />
+			<sql:param index="2" type="String" />
+			<sql:param index="3" type="String" />
+		</sql:statement>
+
+		<sql:statement name="AnatelCodeCache.detectTIMFamilia">
+			<sql:query>
+				SELECT COUNT(distinct CODIGO_ANATEL)
+	 			FROM SYSADM.ACC_BGH_ANATEL_CONFIG
+	 			WHERE DESC_PLANO = ?
+	         	AND ESTADO = ?
+	         	AND DESC_PCT IS NOT NULL
+		    </sql:query>
+			<sql:param index="1" type="String" />
+			<sql:param index="2" type="String" />
+		</sql:statement>
+
+		<sql:statement name="CrashProgramCustCodesCache.select">
+			<sql:query>
+				SELECT CUSTCODE  
+				FROM PACOTE_CLIENTE_CUSTCODE
+				WHERE CUSTCODE = ?
+		    </sql:query>
+		</sql:statement>
+
+		<sql:statement name="CrashProgramPackageInfoCache.select">
+			<sql:query>
+				SELECT fp.TMCODE, fu.LONG_NAME, ci.SVCCODE, ci.CSGCODE
+				FROM   FUP_RATE_PLAN fp
+       				   JOIN FU_PACK_ID fu ON fp.FU_PACK_ID = fu.FU_PACK_ID
+       				   JOIN CRASH_SERVICE_ITEM ci ON ci.SVCCODE = fu.SNCODE
+				WHERE
+    				   fp.TMCODE = ?
+    				   AND fu.LONG_NAME = ?
+		    </sql:query>
+		</sql:statement>
+	
+		<sql:statement name="CostCenterCache.select">
+			<sql:query>
+				SELECT COSTCODE, COST_ID
+				FROM   COSTCENTER
+				WHERE  COSTCODE = ?
+		    </sql:query>
+		</sql:statement>
+
+		<sql:statement name="CustomerSituation.select">
+			<sql:query>
+			SELECT a.CO_ID, TRUNC(a.CH_VALIDFROM) 
+			FROM   CONTRACT_HISTORY a
+			WHERE  a.CO_ID = ?
+       			   AND (a.CO_ID, a.CH_SEQNO) = (SELECT a.CO_ID, MIN(CH_SEQNO)
+                   			                    FROM CONTRACT_HISTORY 
+                    		                    WHERE  CO_ID = a.CO_ID 
+                    		                    AND CH_STATUS = 'a' )
+		    </sql:query>
+		</sql:statement>
+
+		<sql:statement name="MicrocellSGTRatesCache.select">
+			<sql:query>			
+			    SELECT a.SHDES, e.DESC_PLANO, f.CUSTCODE, 
+                       d.DAT_INICIO, a.VLR_AJUSTE, b.VLR_TARIFA, a.UMCODE
+                FROM sgt.ACC_SGT_TIPO_CHAMADA@dbint a
+                    JOIN sgt.ACC_SGT_MC@dbint b ON a.COD_CHAMADA = b.COD_CHAMADA
+                    JOIN sgt.ACC_SGT_LA_MC@dbint c ON b.COD_MC = c.COD_MC
+                    JOIN sgt.ACC_SGT_LA@dbint d ON c.COD_LA = d.COD_LA
+                     JOIN sgt.ACC_SGT_PLANO_CONFIG@dbint e ON e.COD_PLANO = d.COD_PLANO
+                     JOIN sgt.ACC_SGT_REQUISICAO@dbint f ON f.COD_PLANo = d.COD_PLANO
+                WHERE a.SHDES = ?
+                    AND e.DESC_PLANO = ?
+                    AND f.CUSTCODE = ?			
+			</sql:query>
+		</sql:statement>		
+
+		<sql:statement name="NPackPackageInfoCache.select">
+			<sql:query>
+  				SELECT nc.CUSTOMER_ID, nc.DT_INICIO, nm.DES, fp.LONG_NAME, nm.NPCODE, nm.FUOM, nt.TMCODE_CONTR
+				FROM   npack.NPACK_CUST@dbint nc
+      					   JOIN npack.NPACK_TM@dbint nt  ON nt.NPCODE = nc.NPCODE
+      					   JOIN npack.NPACK_MAP@dbint nm ON nm.NPCODE = nc.NPCODE
+      					   JOIN FU_PACK fp   ON fp.FU_PACK_ID = nm.FU_PACK_ID
+				WHERE
+  					   nc.CUSTOMER_ID = ?
+  					   AND nc.DT_INICIO &lt;= ?
+  					   AND ( nc.DT_FIM IS NULL OR nc.DT_FIM &gt;= ? )
+  			    </sql:query>
+		</sql:statement>
+
+		
+
+	</sql:statements>
+
+	</sql:configuration>
+</root>

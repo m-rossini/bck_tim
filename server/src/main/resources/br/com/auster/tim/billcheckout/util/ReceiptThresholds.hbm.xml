@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<!DOCTYPE hibernate-mapping PUBLIC
+        "-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+        "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
+
+<hibernate-mapping>
+
+    <class lazy="false"
+        name="br.com.auster.tim.billcheckout.util.ReceiptThresholds"
+        table="BCK_PARM_RECEIPT_THRESHOLDS">
+
+        <id name="uid"
+            column="OBJID"
+            type="long"
+            unsaved-value="0">
+            <generator class="sequence">
+                <param name="sequence">bck_dimensions_uid</param>
+            </generator>
+        </id>
+
+        <property
+            name="opCodeName"
+            type="string"
+            update="true"
+            insert="true"
+            column="OP_CODE_NAME" 
+            length="8"
+            not-null="false"/>
+
+        <property
+            name="opUF"
+            type="string"
+            update="true"
+            insert="true"
+            column="OP_UF" 
+            length="2"            
+            not-null="false"/>
+
+        <property
+            name="minValue"
+            type="double"
+            update="true"
+            insert="true"
+            column="MIN_VALUE" 
+            not-null="false"/>
+		
+        <property
+            name="maxValue"
+            type="double"
+            update="true"
+            insert="true"
+            column="MAX_VALUE" 
+            not-null="false"/>		
+
+   </class>
+
+</hibernate-mapping>

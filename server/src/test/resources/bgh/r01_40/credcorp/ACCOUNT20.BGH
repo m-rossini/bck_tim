@@ -1,0 +1,13 @@
+00000000^GNI^L^2^1^20RJ^P^3011553^6.161058^2^0^0^07/03/10^N^51^N^1
+10000000^HDR^Fatura^0^W CONSULTING LTDA^R GENERAL ROCA^RJ^20521-070^Nº 935^SALA 202^RIO DE JANEIRO^TIJUCA^TIM Celular S.A.^Rua Fonseca Teles^18 a 30^20940-200^São Cristóvão - Rio de Janeiro^RJ^04.206.050/0044-10^77.238.182^ ^www.tim.com.br^*144^03886352000184^6.161058^14/01/10^13/02/10^14/02/10^07/03/10^0.00^Atenção! A TIM não realiza ativação de nenhum serviço através da programação de terminais TIM OFFICE. Caso sua empresa receba qualquer ligação suspeita solicitando a programação de algum serviço no aparelho, seus funcionários devem ser instruídos a desligar e entrar imediatamente em contato com a TIM.^5307
+11000000^SNF
+11100000^0^0.00^W CONSULTING LTDA^R GENERAL ROCA^RJ^20521-070^Nº 935^SALA 202^RIO DE JANEIRO^TIJUCA
+11100100^48F8.67C6.756C.5F14.1672.33FA.7ADD.FA11
+11200000^NFH^Nota Fiscal de Serviços de Telecomunicações^0^W CONSULTING LTDA^R GENERAL ROCA^RJ^20521-070^Nº 935^SALA 202^RIO DE JANEIRO^TIJUCA^TIM Celular S.A.^Rua Fonseca Teles^18 a 30^20940-200^São Cristóvão - Rio de Janeiro^RJ^04.206.050/0044-10^77.238.182^ ^www.tim.com.br^*144^03886352000184^6.161058^0^14/01/10^13/02/10^14/02/10^07/03/10^0.00^Atenção! A TIM não realiza ativação de nenhum serviço através da programação de terminais TIM OFFICE. Caso sua empresa receba qualquer ligação suspeita solicitando a programação de algum serviço no aparelho, seus funcionários devem ser instruídos a desligar e entrar imediatamente em contato com a TIM.^5307
+11200100^48F8.67C6.756C.5F14.1672.33FA.7ADD.FA11
+11300000^BLA^W CONSULTING LTDA^R GENERAL ROCA^RJ^20521-070^Nº 935^SALA 202^RIO DE JANEIRO^TIJUCA
+12000000^SVC
+34050000^0.00^0.00
+50000000^DET^W CONSULTING LTDA^6.161058^14/01/10^13/02/10^14/02/10^07/03/10^0.00
+61000000^0.00
+99999998

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<project name="auster-billcheckout" default="server.run">
+
+    <property environment="env"/>
+
+    <target name="server.run">
+
+    <path id="run.classpath">
+       <fileset dir="${basedir}/lib" includes="*"/>
+       <pathelement location="${basedir}/conf"/>
+     </path>
+
+     <java classname="br.com.auster.tim.billcheckout.loader.LoaderMain"
+           fork="yes"
+           output="${env.BCK_BASEDIR}/log/loader.out"
+           error="${env.BCK_BASEDIR}/log/loader.err"
+           maxmemory="${env.BCK_LOADER_BASEMEM}"
+           dir="${basedir}">
+
+        <jvmarg value="-Xms${env.BCK_LOADER_BASEMEM}"/>
+
+        <sysproperty key="app.name" value="BCKLoader"/>
+        <sysproperty key="java.security.policy" value="etc/security.policy"/>
+        <sysproperty key="java.endorsed.dirs" value="${basedir}/lib/endorsed"/>
+        <sysproperty key="loader.db" value="${loader.db}"/>
+        <sysproperty key="loader.layout" value="${loader.layout}"/>
+     	<sysproperty key="user.language" value="pt"/>
+      	<sysproperty key="user.region" value="BR"/>
+     	<sysproperty key="jdbc.drivers" value="org.apache.commons.dbcp.PoolingDriver:oracle.jdbc.driver.OracleDriver"/>
+		<sysproperty key="user.timezone" value="GMT-3"/>
+		<sysproperty key="log4j.configuration" value="file:${log4j.configuration}"/>
+
+        <arg value="${cmdline.args}"/>
+        <classpath>
+           <path refid="run.classpath"/>
+        </classpath>
+     </java>
+
+    </target>
+
+</project>

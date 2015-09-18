@@ -1,0 +1,73 @@
+Plano TIM Família 120 250-GSP;3-Servicos Adicionais;Pcte Dados Compartilhado 1;Pct. Dados 250 MB Compart.;5;590;;01-1-2010
+Plano TIM Família 120 250-GSP;3-Servicos Adicionais;Pcte Promocional - LD41;Pcte 20 min LD41;5;00;;01-1-2010
+Plano TIM Família 120 250-GSP;3-Servicos Adicionais;Pcte Compart 1 - TIM Casa Flex;TIM Casa Flex 300 min Compart.;5;49,90;;01-1-2010
+Plano TIM Família 120 250-GSP;3-Servicos Adicionais;Pacote Compartilhado;Pacote TIM Família 120;5;99,90;;01-1-2010
+Plano TIM Família 120 250-GSP;3-Servicos Adicionais;Pcte Compart 1 - TIM Casa Flex;TIM Casa Flex 500 min Compart.;5;69,90;;01-1-2010
+Plano TIM Família 120 250-GSP;3-Servicos Adicionais;Pacote Compartilhado;Pacote TIM Família 250;5;160,90;;01-1-2010
+Plano TIM Família 120 250-GSP;3-Servicos Adicionais;Pcte Adicional - Mensagens;Pcte 10 TIM Torpedos;5;00;;01-1-2010
+Plano TIM Família 120 250-GSP;3-Servicos Adicionais;Viagem TIM 2;Viagem TIM - 5000 min;5;16050;;01-1-2010
+Plano TIM Família 120 250-GSP;3-Servicos Adicionais;Viagem TIM 3;Viagem TIM - 5000 min;5;16050;;01-1-2010
+Plano TIM Família 120 250-GSP;3-Servicos Adicionais;Viagem TIM;Viagem TIM - 5000 min;5;16050;;01-1-2010
+Plano TIM Família 400 2000-GSP;3-Servicos Adicionais;Pcte Dados Compartilhado 1;Pct. Dados 250 MB Compart.;5;590;;01-1-2010
+Plano TIM Família 400 2000-GSP;3-Servicos Adicionais;Pcte Compart 1 - TIM Casa Flex;TIM Casa Flex 300 min Compart.;5;49,90;;01-1-2010
+Plano TIM Família 400 2000-GSP;3-Servicos Adicionais;Pcte Compart 1 - TIM Casa Flex;TIM Casa Flex 500 min Compart.;5;69,90;;01-1-2010
+Plano TIM Família 400 2000-GSP;3-Servicos Adicionais;Pcte Adicional - Mensagens;Pcte 10 TIM Torpedos;5;00;;01-1-2010
+Plano TIM Família 400 2000-GSP;3-Servicos Adicionais;Viagem TIM 2;Viagem TIM - 5000 min;5;16050;;01-1-2010
+Plano TIM Família 400 2000-GSP;3-Servicos Adicionais;Viagem TIM 3;Viagem TIM - 5000 min;5;16050;;01-1-2010
+Plano TIM Família 400 2000-GSP;3-Servicos Adicionais;Pacote Compartilhado;Pacote TIM Família 1500;5;5600;;01-1-2010
+Plano TIM Família 400 2000-GSP;3-Servicos Adicionais;Pacote Compartilhado;Pacote TIM Família 2000;5;7150;;01-1-2010
+Plano TIM Família 400 2000-GSP;3-Servicos Adicionais;Viagem TIM;Viagem TIM - 5000 min;5;16050;;01-1-2010
+Plano TIM BRASIL 120-250-GSP;3-Servicos Adicionais;Pcte Adicional - Mensagens;Pcte 10 TIM Torpedos;6;00;;01-1-2010
+Plano TIM BRASIL 120-250-GSP;3-Servicos Adicionais;Viagem TIM 2;Viagem TIM - 5000 min;6;16050;;01-1-2010
+Plano TIM BRASIL 120-250-GSP;3-Servicos Adicionais;Viagem TIM 3;Viagem TIM - 5000 min;6;16050;;01-1-2010
+Plano TIM BRASIL 120-250-GSP;3-Servicos Adicionais;Viagem TIM;Viagem TIM - 5000 min;6;16050;;01-1-2010
+Plano TIM BRASIL 400-2000-GSP;3-Servicos Adicionais;Pacote de Minutos;Pacote TIM BRASIL 400 min;6;203,790;;01-1-2010
+Plano TIM BRASIL 400-2000-GSP;3-Servicos Adicionais;Pacote de Minutos;Pacote TIM BRASIL 700 min;6;320,840;;01-1-2010
+Plano TIM BRASIL 400-2000-GSP;3-Servicos Adicionais;Pcte Adicional - Mensagens;Pcte 10 TIM Torpedos;6;00;;01-1-2010
+Plano TIM BRASIL 400-2000-GSP;3-Servicos Adicionais;Viagem TIM 2;Viagem TIM - 5000 min;6;16050;;01-1-2010
+Plano TIM BRASIL 400-2000-GSP;3-Servicos Adicionais;Viagem TIM 3;Viagem TIM - 5000 min;6;16050;;01-1-2010
+Plano TIM BRASIL 400-2000-GSP;3-Servicos Adicionais;Viagem TIM;Viagem TIM - 5000 min;6;16050;;01-1-2010
+Plano TIM BRASIL 60-GSP;3-Servicos Adicionais;Pacote de Minutos;Pacote TIM BRASIL 60 min;6;60,310;;01-1-2010
+Plano TIM BRASIL 60-GSP;3-Servicos Adicionais;Pcte Promocional - LD41;Pcte 20 min LD41;6;00;;01-1-2010
+Plano TIM BRASIL 60-GSP;3-Servicos Adicionais;Pcte Adicional - Mensagens;Pcte 10 TIM Torpedos;6;00;;01-1-2010
+Plano TIM BRASIL 60-GSP;3-Servicos Adicionais;Viagem TIM 2;Viagem TIM - 5000 min;6;16050;;01-1-2010
+Plano TIM BRASIL 60-GSP;3-Servicos Adicionais;Viagem TIM 3;Viagem TIM - 5000 min;6;16050;;01-1-2010
+Plano TIM BRASIL 60-GSP;3-Servicos Adicionais;Viagem TIM;Viagem TIM - 5000 min;6;16050;;01-1-2010
+Plano Light 40-GSP;3-Servicos Adicionais;Pcte Adicional - Mensagens;Pcte 10 TIM Torpedos;8;00;;01-1-2010
+Plano Light 40-GSP;3-Servicos Adicionais;Viagem TIM 2;Viagem TIM - 5000 min;8;16050;;01-1-2010
+Plano Light 40-GSP;3-Servicos Adicionais;Viagem TIM 3;Viagem TIM - 5000 min;8;16050;;01-1-2010
+Plano Light 40-GSP;3-Servicos Adicionais;Viagem TIM;Viagem TIM - 5000 min;8;16050;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Viagem TIM 2;Viagem TIM - 5000 min;8;00;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Viagem TIM 3;Viagem TIM - 5000 min;8;00;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Viagem TIM;Viagem TIM - 5000 min;8;00;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pacote de Minutos;Pacote VIP 700 min;8;365,970;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pcte Promocional - Torpedos;Pacote VIP 700 min;8;365,970;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pcte Promocional - Minutos;Pacote VIP 700 min;8;365,970;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pcte Adicional - Mensagens;Pacote VIP 700 min;8;365,970;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pcte Adicional - Dados;Pacote VIP 700 min;8;365,970;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pcte Adicional - Minutos;Pacote VIP 700 min;8;365,970;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pacote de Minutos - 4;Pacote VIP 700 min;8;365,970;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pacote de Minutos - 1;Pacote VIP 700 min;8;365,970;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pacote de Minutos - 3;Pacote VIP 700 min;8;365,970;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pacote de Minutos - 2;Pacote VIP 700 min;8;365,970;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pacote de Minutos;Pacote VIP 5000 min;8;00;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pcte Adicional - Minutos;Pacote VIP 5000 min;8;00;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pcte Adicional - Dados;Pacote VIP 5000 min;8;00;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pcte Promocional - Torpedos;Pacote VIP 5000 min;8;00;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pcte Promocional - Minutos;Pacote VIP 5000 min;8;00;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pcte Adicional - Mensagens;Pacote VIP 5000 min;8;00;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pacote de Minutos - 4;Pacote VIP 5000 min;8;00;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pacote de Minutos - 3;Pacote VIP 5000 min;8;00;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pacote de Minutos - 2;Pacote VIP 5000 min;8;00;;01-1-2010
+Plano TIM-GSP;3-Servicos Adicionais;Pacote de Minutos - 1;Pacote VIP 5000 min;8;00;;01-1-2010
+Plano Meu Mundo-G01;3-Servicos Adicionais;Viagem TIM 2;Viagem TIM - 5000 min;10;16050;;01-1-2010
+Plano Meu Mundo-G01;3-Servicos Adicionais;Viagem TIM 3;Viagem TIM - 5000 min;10;16050;;01-1-2010
+Plano Meu Mundo-G01;3-Servicos Adicionais;Viagem TIM;Viagem TIM - 5000 min;10;16050;;01-1-2010
+TIM Meia Tarifa-GSP;3-Servicos Adicionais;Pacote de Minutos;TIM Meia Tarifa 20;10;320;;01-1-2010
+TIM Meia Tarifa-GSP;3-Servicos Adicionais;Pcte Adicional - Mensagens;Pcte 10 TIM Torpedos;10;00;;01-1-2010
+TIM Meia Tarifa-GSP;3-Servicos Adicionais;Viagem TIM 2;Viagem TIM - 5000 min;10;16050;;01-1-2010
+TIM Meia Tarifa-GSP;3-Servicos Adicionais;Viagem TIM 3;Viagem TIM - 5000 min;10;16050;;01-1-2010
+TIM Meia Tarifa-GSP;3-Servicos Adicionais;Viagem TIM;Viagem TIM - 5000 min;10;16050;;01-1-2010
+Plano Meu Sonho-G01;3-Servicos Adicionais;Viagem TIM 2;Viagem TIM - 5000 min;11;16050;;01-1-2010
+Plano Meu Sonho-G01;3-Servicos Adicionais;Viagem TIM 3;Viagem TIM - 5000 min;11;16050;;01-1-2010
+Plano Meu Sonho-G01;3-Servicos Adicionais;Viagem TIM;Viagem TIM - 5000 min;11;16050;;01-1-2010

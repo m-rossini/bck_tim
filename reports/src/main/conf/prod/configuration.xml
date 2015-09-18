@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<minerva
+	xmlns="http://www.auster.com.br/minerva">
+
+
+	<listeners class="br.com.auster.minerva.jms.JMSRequestListener" count="1">
+		<configuration topic-name="topic/reportTopic" topic-factory="billcheckout.QueueConnectionFactory">
+			<jndi-properties>
+				<property name="java.naming.factory.initial">weblogic.jndi.WLInitialContextFactory</property>
+				<property name="java.naming.provider.url">t3://snelnx218:7101</property>
+			</jndi-properties>
+		</configuration>
+	</listeners>
+
+	<manager class="br.com.auster.minerva.billcheckout.BillcheckoutMinervaManagerBase">
+		<configuration pool-name="sql/billcheckoutdb">
+			<!-- used pools -->
+			<sql:configuration xmlns:sql="http://www.auster.com.br/common/sql/">
+			    <sql:database name="sql/billcheckoutdb">
+                               <sql:statements path="conf/sql/queries.xml"/>
+                            </sql:database>
+		    </sql:configuration>
+		</configuration>
+
+		<factory class="br.com.auster.minerva.core.impl.ReportFactoryBase">
+			<configuration>
+				<report name="billcheckout-portal" class="br.com.auster.tim.billcheckout.report.BillcheckoutStandardCSVReport">
+					<configuration filename="sql/report.xml"/>
+				</report>
+			</configuration>
+		</factory>
+	</manager>
+
+	<dispatchers class="br.com.auster.minerva.billcheckout.report.DatabaseDispatcher" count="1">
+		<configuration pool-name="sql/billcheckoutdb" description-prefix=""/>
+	</dispatchers>
+
+</minerva>

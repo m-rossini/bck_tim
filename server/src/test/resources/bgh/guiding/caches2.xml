@@ -1,0 +1,4 @@
+<global name="" class-name="" 
+		lazy-cache="true" use-alternate="false" cache-size="50">
+	<database pool-name="bgh/guiding/guidingdb"/>
+</global>

@@ -1,0 +1,58 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.om.invoice.TIMUsageGuidingFlag;
+
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+/**
+ *
+ */
+rule "R02-3 - Service Doesnot Exist"
+	salience 50
+	when
+		$usage : TIMUsageDetail ( $flag : guidingFlags -> ( $flag.isServiceExists() == false ),
+								  $serviceId : svcId ,
+								  $calledNumber : calledNumber,
+								  $callerNumber : channelId,
+								  $dateTime : datetime,
+								  $callDuration : usageDuration,
+								  $secName : sectionName
+		                        )
+
+		$account : Account( $carrierCode : carrierCode )
+	then
+		consequenceBuilder.setRule("R02-3","Serviço não cadastrado");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Serviço não foi encontrado na base de referência");
+		c.addAttribute("Nome da Seção", $secName);
+		c.addAttribute("Número Chamador", $callerNumber);
+		c.addAttribute("Número Chamado", $calledNumber);
+		c.addAttribute("Serviço", $serviceId);
+		c.addDateTimeAttribute("Data/Hora Chamada", $dateTime);
+		c.addAttribute("Duração Chamada", $callDuration);
+
+		results.add(c);
+end

@@ -1,0 +1,19 @@
+LOAD DATA
+BADFILE 'log/guiding.bad'
+DISCARDFILE 'log/guiding.dsc'
+APPEND
+INTO TABLE QLF_USAGE_RATES
+FIELDS TERMINATED BY ","
+( 
+ 	OBJID 							EXPRESSION "seq1.nextval", 
+ 	CUSTOM_1      			position(1:2048) "null",
+	TARIFF_ZONE_UID			position(1:1) "loader.get_uid('QLF_TARIFF_ZONE', 'ZONE_CODE', loader.word(:custom_1,1,';'))" ,
+	PLANS_UID						position(1:1) "loader.get_plan_uid(loader.word(:custom_1,2,';'), loader.word(:custom_1,4,';'))" ,
+	SERVICES_UID        position(1:1) "loader.get_uid('QLF_SERVICES', 'SVC_CODE', loader.word(:custom_1,3,';'))" ,
+	GEO_DM_UID					position(1:1) "loader.get_uid('BCK_GEO_DM', 'GEO_STATE', loader.word(:custom_1,4,';'))" ,
+	RATE_TIME_ZONE_UID	position(1:1) "loader.get_uid('QLF_RATE_TIME_ZONE', 'TTCODE', loader.word(:custom_1,5,';'))" ,
+	EFFECTIVE_DATE		  position(1:1)  "to_date(loader.word(:custom_1,9,';'), 'DD-MON-YY')",
+	EXPIRATION_DATE		  position(1:1)  "to_date(loader.word(:custom_1,10,';'), 'DD-MON-YY')",
+	INIT_RATE						position(1:1) "to_number(loader.word(:custom_1,11,';'), '999D999999','nls_numeric_characters = ''.,''')",
+	STEP_RATE						position(1:1) "to_number(loader.word(:custom_1,12,';'), '999D999999','nls_numeric_characters = ''.,''')"
+)

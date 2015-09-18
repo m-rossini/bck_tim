@@ -1,0 +1,69 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.billcheckout.param.UsageGroupLDVO;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.TIMUsageGuidingFlag;
+
+
+global br.com.auster.tim.billcheckout.util.UsageGroupingCache bghUsageGroupingCache;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.tim.billcheckout.param.UsageGroupLDCache usageGroupLDCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+/**
+ *
+ */
+rule "R01-10 - Usage not allowed in UsageGroup"
+	salience 50
+	when
+		$usage : TIMUsageDetail ( $callerNumber : channelId,
+								  $calledNumber : calledNumber,
+								  $dateTime : datetime,
+								  $localCall : localCall,
+								  $callDuration : usageDuration,
+								  $cspId : carrierCode,
+								  $sectionName : sectionName
+		                        )
+		$account : Account( $carrierCode : carrierCode )
+
+		eval (! $sectionName.equals(bghUsageGroupingCache.getFromCache($usage)) )
+
+	then
+		consequenceBuilder.setRule("R01-10","Chamada seção incorreta");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		if ($localCall.booleanValue()) {
+			c.setDescription("A chamada foi demonstrada na seção incorreta da fatura.");
+		} else {
+			c.setDescription("A chamada de longa distância foi demonstrada na seção incorreta da fatura.");
+		}
+		c.addAttribute("Tariff Zone", $usage.getTariff());
+		c.addAttribute("Seção", $sectionName);
+		c.addAttribute("Número Chamador", $callerNumber);
+		c.addAttribute("Número Chamado", $calledNumber);
+		c.addDateTimeAttribute("Data/Hora Chamada", $dateTime);
+		c.addAttribute("Duração Chamada", $callDuration);
+		c.addAttribute("Código CSP", $cspId);
+
+		results.add(c);
+end

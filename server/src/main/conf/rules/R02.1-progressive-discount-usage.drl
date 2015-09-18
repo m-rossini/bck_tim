@@ -1,0 +1,179 @@
+#created on: 11/04/2008
+package br.com.auster.tim.billchekout
+
+#list any import classes here.
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.tim.om.invoice.PromotionPackageReceiptDetail;
+import br.com.auster.tim.om.invoice.PromotionPackageDiscount;
+import br.com.auster.tim.om.invoice.UsagePromotionDetail;
+import br.com.auster.tim.om.invoice.ContractTotalsDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.common.rules.GlobalForLog;
+import br.com.auster.tim.billcheckout.param.ProgressiveDiscountVO;
+import br.com.auster.tim.billcheckout.util.NamedBigDecimal;
+import java.math.BigDecimal;
+import br.com.auster.common.lang.NamedDouble;
+
+#declare any global variables here
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global br.com.auster.tim.billcheckout.param.ProgressiveDiscountCache progressiveDiscountCache;
+global java.util.List results;
+
+
+/**
+ *  THIS RULE RUNS TOGETHER WITH (R02.1-progressive-discount-contracts.drl).
+ *  THERE EXISTS THE ONLY INIT RULE NEEDED BY BOTH, SO THIS ONE CANNOT RUN BY ITSELF!!
+ */
+
+
+/*
+ * (STEP 2) Sum the amnt of Usage Promotion Package for DPN/DPI service.
+ */
+rule "R02.1 - Usage - Sum UsagePromotionPackage beforePromotionAmnt and discAmnt"
+	salience 70
+
+	when
+
+		ProgressiveDiscountVO ( $shdes : shdes -> ($shdes!=null),
+								$discountDesc : discountDesc
+							  )
+
+		UsagePromotionDetail ( promotionPackage == $shdes,
+							   $discAmount : amount,
+							   $amountBeforePromotions : usageAmountBeforePromotions,
+							   usageDiscountAmount > 0 )
+
+		$ndBefPromoSum : NamedBigDecimal( $nameSum : name -> ($nameSum.equals("R02.1_UsagePromotionPackage_"+$discountDesc+"_totalBefDiscAmnt")) )
+		$ndDiscSum : NamedBigDecimal( $nameSum2 : name -> ($nameSum2.equals("R02.1_UsagePromotionPackage_"+$discountDesc+"_totalDiscAmnt")) )
+
+		eval($shdes.equalsIgnoreCase("DPN")||$shdes.equalsIgnoreCase("DPI"))
+
+	then
+
+		$ndBefPromoSum.addTo($amountBeforePromotions.doubleValue());
+		$ndDiscSum.addTo($discAmount.doubleValue());
+
+end
+
+
+
+
+
+/*
+ * (STEP 3) Validate the progressive discount rate and amount for Usage Promotion Package (DPN/DPI Service).
+ */
+rule "R02.1 - Validate disc rate and amount for Usage Promotion Package"
+	salience 60
+
+	when
+
+		$disc : PromotionPackageDiscount ( $discRate : discountRate,
+										   $totalDiscountAmount : totalDiscountAmount
+										 )
+
+		PromotionPackageReceiptDetail ( $caption : caption,
+										promotionPackageDiscountList contains $disc
+									  )
+
+		$progDisc : ProgressiveDiscountVO ( $shdes : shdes -> ($shdes!=null),
+											$discountDesc : discountDesc -> ($discountDesc.equalsIgnoreCase($caption)) )
+
+		Account ( $carrierCode : carrierCode )
+
+		$ndBefPromoSum : NamedBigDecimal( $nameSum : name -> ($nameSum.equals("R02.1_UsagePromotionPackage_"+$discountDesc+"_totalBefDiscAmnt")) )
+
+		$ndDiscSum : NamedBigDecimal( $nameSum : name -> ($nameSum.equals("R02.1_UsagePromotionPackage_"+$discountDesc+"_totalDiscAmnt")) )
+
+		eval($shdes.equalsIgnoreCase("DPN") || $shdes.equalsIgnoreCase("DPI"))
+
+	then
+
+		double dbDiscRate = $progDisc.getSpecificDiscRate($ndBefPromoSum.getValue().doubleValue());
+
+		if (dbDiscRate < 0) {
+			consequenceBuilder.setRule("R02-1","Validação desconto progressivo");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+			c.setDescription("Percentual de desconto não encontrado na Base.");
+			c.addAttribute("Nome do Pacote/Serviço", $discountDesc);
+			c.addDoubleAttribute("Valor Base para Desconto", $ndBefPromoSum.getValue().doubleValue());
+			c.addAttribute("Medida Usada com Base", "Reais");
+			c.addDoubleAttribute("Percentual de Desconto na Fatura", $discRate.doubleValue());
+			c.addNullAttribute("Percentual de Desconto Esperado");
+			c.addNullAttribute("Valor de Descontos na Fatura");
+			c.addNullAttribute("Valor de Descontos Calculado");
+
+			results.add(c);
+		} else {
+
+			BigDecimal discRateDiff = new BigDecimal(String.valueOf(dbDiscRate));
+
+			if (Math.abs(discRateDiff.subtract(new BigDecimal(String.valueOf($discRate.doubleValue())).setScale(2,BigDecimal.ROUND_DOWN)).doubleValue()) > 0.01) {
+				consequenceBuilder.setRule("R02-1","Validação desconto progressivo");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+				c.setDescription("Percentual de desconto não confere com o cadastrado na Base.");
+				c.addAttribute("Nome do Pacote/Serviço", $discountDesc);
+				c.addDoubleAttribute("Valor Base para Desconto", $ndBefPromoSum.getValue().doubleValue());
+				c.addAttribute("Medida Usada com Base", "Reais");
+				c.addDoubleAttribute("Percentual de Desconto na Fatura", $discRate.doubleValue());
+				c.addDoubleAttribute("Percentual de Desconto Esperado",dbDiscRate);
+				c.addNullAttribute("Valor de Descontos na Fatura");
+				c.addNullAttribute("Valor de Descontos Calculado");
+
+				results.add(c);
+
+			} else {
+
+				if (Math.abs($ndDiscSum.subtractFrom(Math.abs($totalDiscountAmount.doubleValue()))) > 0.01) {
+
+					consequenceBuilder.setRule("R02-1","Validação desconto progressivo");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+					c.setDescription("Valor de desconto não confere com o calculado.");
+					c.addAttribute("Nome do Pacote/Serviço", $discountDesc);
+					c.addDoubleAttribute("Valor Base para Desconto", $ndBefPromoSum.getValue().doubleValue());
+					c.addAttribute("Medida Usada com Base", "Reais");
+					c.addDoubleAttribute("Percentual de Desconto na Fatura", $discRate.doubleValue());
+					c.addDoubleAttribute("Percentual de Desconto Esperado", dbDiscRate);
+					c.addDoubleAttribute("Valor de Descontos na Fatura", Math.abs($totalDiscountAmount.doubleValue()));
+					c.addDoubleAttribute("Valor de Descontos Calculado", $ndDiscSum.getValue().doubleValue());
+
+					results.add(c);
+
+				}
+
+			}
+
+		}
+
+end

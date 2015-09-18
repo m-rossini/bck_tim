@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='utf-8'?>
+
+<!DOCTYPE hibernate-configuration PUBLIC
+	"-//Hibernate/Hibernate Configuration DTD 3.0//EN"
+	"http://hibernate.sourceforge.net/hibernate-configuration-3.0.dtd">
+<hibernate-configuration>
+
+    <session-factory>
+
+		<property name="show_sql">true</property>
+		<property name="use_outer_join">true</property>
+		<property name="cache.use_second_level_cache">false</property>
+        <property name="jdbc.batch_size">1000</property>
+        <property name="use_scrollable_resultset">false</property>
+
+		<property name="connection.driver_class">org.apache.commons.dbcp.PoolingDriver</property>
+		<property name="connection.url">jdbc:apache:commons:dbcp:/pool/pooldb</property>
+		<property name="connection.pool_size">0</property>
+
+		<property name="dialect">org.hibernate.dialect.Oracle9Dialect</property>
+
+        <mapping resource="br/com/auster/tim/billcheckout/model/ProgressiveDiscount.hbm.xml"/>
+        <mapping resource="br/com/auster/tim/billcheckout/model/ProgressiveDiscountDesc.hbm.xml"/>
+        <mapping resource="br/com/auster/tim/billcheckout/model/ProgressiveDiscountRates.hbm.xml"/>
+
+    </session-factory>
+
+</hibernate-configuration>

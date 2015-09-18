@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<saver-config>
+
+	<sql-data-saver-config id="invoice-fact-saver">
+
+	  <!--                                -->
+	  <!-- EP Invoice table               -->
+	  <!--                                -->
+      <table name="bck_invoice_fact" data-list="invoiceFact-list" mode="update" cache="0">
+
+        <field name="cycle_id"           type="long"              value="cycle_id"    key="true"/>
+        <field name="account_id"         type="long"              value="account_id"  key="true"/>
+        <field name="time_id"            type="long"              value="time_id"     key="true"/>
+        <field name="geo_id"             type="long"              value="geo_id"      key="true"/>
+        <field name="carrier_id"         type="long"              value="carrier_id"  key="true"/>
+        <field name="total_amount"       type="double"            value="totalAmount"/>
+	    <field name="transaction_id"     type="java.lang.String"  value="transactionId"/>
+
+		<dimension name="bck_cycle_dm"  item-expression="cycleDimension"
+			       mode="ignore"        cache="10"
+			       export-to="cycle_id">
+			<id    name="objid"            type="long"             generator-sql="select bck_dimensions_uid.nextval from dual"/>
+			<field name="cut_date"         type="java.util.Date"   value="cutDate"     key="true"/>
+			<field name="due_date"         type="java.util.Date"   value="dueDate"     key="true"/>
+			<field name="cycle_code"       type="java.lang.String" value="cycleCode"/>
+			<field name="issue_date"       type="java.util.Date"   value="issueDate"/>
+		</dimension>
+
+		<dimension name="bck_account_dm"      item-expression="accountDimension"
+			       mode="ignore"              cache="10"
+			       export-to="account_id">
+			<id    name="objid"              type="long"               generator-sql="select bck_dimensions_uid.nextval from dual"/>
+			<field name="account_number"     type="java.lang.String"   value="accountNumber"     key="true"/>
+			<field name="account_type"       type="java.lang.String"   value="accountType"/>
+		</dimension>
+
+		<dimension name="bck_time_dm"      item-expression="timeDimension"
+			       mode="ignore"           cache="10"
+			       export-to="time_id">
+			<id    name="objid"              type="long"               generator-sql="select bck_dimensions_uid.nextval from dual"/>
+			<field name="time_year"          type="java.lang.String"   value="year"     key="true"/>
+			<field name="time_month"         type="java.lang.String"   value="month"    key="true"/>
+			<field name="time_day"           type="java.lang.String"   value="day"      key="true"/>
+		</dimension>
+
+		<dimension name="bck_geo_dm"      item-expression="geographicDimension"
+			       mode="ignore"          cache="10"
+			       export-to="geo_id">
+			<id    name="objid"              type="long"               generator-sql="select bck_dimensions_uid.nextval from dual"/>
+			<field name="geo_country"        type="java.lang.String"   value="country"     key="true"/>
+			<field name="geo_state"          type="java.lang.String"   value="state"       key="true"/>
+		</dimension>
+
+		<dimension name="bck_carrier_dm"      item-expression="carrierDimension"
+			       mode="ignore"              cache="10"
+			       export-to="carrier_id">
+			<id    name="objid"              type="long"               generator-sql="select bck_dimensions_uid.nextval from dual"/>
+			<field name="carrier_code"       type="java.lang.String"   value="carrierCode"  key="true"/>
+			<field name="carrier_state"      type="java.lang.String"   value="carrierState" key="true"/>
+			<field name="carrier_name"       type="java.lang.String"   value="carrierName"/>
+		</dimension>
+      </table>
+
+    </sql-data-saver-config>
+
+</saver-config>

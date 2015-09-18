@@ -1,0 +1,271 @@
+#created on: May 26, 2009
+#author anardo
+package br.com.auster.tim.billcheckout
+
+#list any import classes here
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.billcheckout.consequence.DimensionCache;
+
+import java.util.ArrayList;
+import br.com.auster.common.rules.GlobalForLog;
+import br.com.auster.common.lang.NamedHashMap;
+
+import br.com.auster.tim.billcheckout.param.PlansVO;
+import br.com.auster.tim.billcheckout.param.ElegibilityVO;
+import br.com.auster.tim.billcheckout.param.ContractExistsServicesVO;
+import br.com.auster.tim.billcheckout.bscs.ContractExistsPackVO;
+import br.com.auster.tim.billcheckout.bscs.ScanStructureLevelVO;
+
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.ContractTotalsDetail;
+import br.com.auster.tim.om.invoice.ServiceReceiptDetail;
+import br.com.auster.tim.om.invoice.TIMAccount;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+
+#declare any global variables here
+global br.com.auster.tim.billcheckout.param.PlansCache planCache;
+global br.com.auster.tim.billcheckout.param.ElegibilityCache elegibCache;
+global br.com.auster.tim.billcheckout.bscs.ContractExistsPackCache contrExistsPackCache;
+global br.com.auster.tim.billcheckout.bscs.ScanStructureLevelCache scanStructLevelCache;
+global br.com.auster.tim.billcheckout.param.ContractExistsServicesCache contrExistsServCache;
+global java.util.List results;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+
+
+function TelcoConsequence buildR33Consequence(DimensionCache dimensionCache, TelcoConsequenceBuilder consequenceBuilder, 
+		 String carrierCode, String description, String typeClient, long codPromotion, String contract, 
+		 Double valueBGH, double valueDeviat, String accessNbr) {
+		
+		consequenceBuilder.setRule("R33-1","Desconto Implícito");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache(carrierCode));
+	
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription(description);
+		c.addAttribute	  ("Tipo de Cliente", 	 typeClient);
+		c.addAttribute	  ("Contrato", 			 contract);
+		c.addAttribute	  ("Número do Acesso", 	 accessNbr);
+		c.addLongAttribute("Código da Promoção", codPromotion);
+		c.addNullAttribute("Plano");
+		c.addAttribute("Valor no BGH", 	  	 valueBGH);
+		c.addDoubleAttribute("Valor de Desvio", valueDeviat);
+		
+		return c;
+}
+
+function TelcoConsequence buildR33ConsequencePlan(DimensionCache dimensionCache, TelcoConsequenceBuilder consequenceBuilder, 
+		 String carrierCode, String description, String typeClient, String contract, String planInexist, String nbrAccess) {
+		
+		consequenceBuilder.setRule("R33-1","Desconto Implícito");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache(carrierCode));
+	
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription  (description);
+		c.addAttribute	  ("Tipo de Cliente", typeClient);
+		c.addAttribute	  ("Contrato", 		  contract);
+		c.addAttribute	  ("Número do Acesso",nbrAccess);
+		c.addNullAttribute("Código da Promoção");
+		c.addAttribute	  ("Plano", 		  planInexist);
+		c.addNullAttribute("Valor no BGH");
+		c.addNullAttribute("Valor de Desvio");
+		
+		return c;
+}
+
+#Criando Map para contrato/valor
+rule "R33.1-INIT"
+salience 90
+	when
+		not ( NamedHashMap(name == "contract") )
+	then
+		NamedHashMap mapContr = new NamedHashMap("contract");
+		assert(mapContr);
+end
+
+#Validando valor para chave 60000000, com o numero do CONTRATO eleito em 51000000, armazenado no Map
+rule "R33.1-Validando valor na chave 60000000"
+salience 70
+	when
+		$mapContr : NamedHashMap(name == "contract")
+	
+		Account( $carrierCode  : carrierCode, 
+				 $typeClient   : accountType
+			   )
+		
+		$ctd 	  : ContractTotalsDetail( tag == "60000000",
+										  $contract  : contractNumber,
+										  $accessNbr : accessNbr,
+										  $amountBGH : totalAmount
+										 )
+	then
+		if ($mapContr.containsKey($contract) && $ctd.getTotalAmount() != ((ElegibilityVO)$mapContr.get($contract)).getVlrDesvio()){
+			results.add( buildR33Consequence(dimensionCache, consequenceBuilder, $carrierCode, "Mensalidade com pacotes associados aplicada indevidamente",
+								$typeClient, ((ElegibilityVO)$mapContr.get($contract)).getCodPromo(), $contract, $amountBGH, 
+								((ElegibilityVO)$mapContr.get($contract)).getVlrDesvio(), $accessNbr) );
+		}
+end
+
+#Validando elegibilidade e mapeando contrato/valor dos eleitos
+rule "R33.1-Implicit Discount"
+salience 80
+	when
+		$timAcc : TIMAccount( $timOperatorID : carrierState,    # <attribute  name="timOperatorID" index="6" />  00000000 - estado
+							  $type : accountType,			 	# <attribute  name="typeOfCustomer" index="3" /> 00000000 - tipo conta
+							  $custCode : accountNumber,		# <attribute  name="custCode" index="9" /> 00000000 - numero da conta
+							  $carrier  : carrierCode )
+							  
+		$contrInfo: ContractInfoSection( $ratePlan : ratePlan,	# <attribute  name="ratePlan" index="4" /> 51000000 - plano do contrato
+										 $contract : contractNumber,
+										 $access : accessNbr )
+										 
+		$invoice : Invoice ( $endDate : cycleEndDate )  		# <attribute  name="billingPeriodEnd" index="28" /> 11200000 - data de corte
+		$map	 : NamedHashMap( name == "contract" )								 													
+	then
+		PlansVO plan = (PlansVO) planCache.getFromCache(PlansVO.createAlternateKey($ratePlan, $timOperatorID));
+
+		if (plan != null && plan.getShortDesc() != null){
+			ElegibilityVO uniqueElected = null; //armazena o unico eleito para o contrato, o de menor valor
+			# Consultando se plano consta na tabela de elegibilidade - Querys 2(F) e 3(L)
+			# Feito new ArrayList para listElegVO para qdo remover, nao remover do cache (seria o mesmo ponteiro).
+			ArrayList listElegibVO = (ArrayList) elegibCache.getFromCache(
+									 		ElegibilityVO.createAlternateKey(plan.getShortDesc(), $type), $type);
+			ArrayList listElegVO = new ArrayList(0);
+			if (listElegibVO!=null){
+				listElegVO.addAll(listElegibVO);
+			}else{
+				GlobalForLog.log("WARN", "R33.1 - No further validation. There is no records in the table eligibility"
+				+ " PlanSHDES:" + plan.getShortDesc() + " TypeCustomer:" + $type);
+			}
+			#Varrendo cada registro retornado de Q2/Q3, para o plano de um contrato
+			for (int j=0; j < listElegVO.size(); j++){
+				ElegibilityVO elegVO = (ElegibilityVO) listElegVO.get(j);
+				
+				########## INICIO DO CRITERIO DE ELEGIBILIDADE INDIVIDUAL ###########
+				
+				#Consultando existencia do serviï¿½o no contrato - Query 4
+				if (elegVO.getCodServIndiv() != null){
+					ContractExistsServicesVO existsServVO = (ContractExistsServicesVO) contrExistsServCache.getFromCache(
+															ContractExistsServicesVO.createAlternateKey($contract, elegVO.getCodServIndiv()));
+					if (existsServVO != null){
+						#VALIDANDO O PERï¿½ODO DE VIGï¿½NCIA DO COD_SERV_INDIVIDUAL After==Depois  Before==Antes
+						if ( null == existsServVO.getActivationDate() || 
+							 (existsServVO.getActivationDate() != null  &&  !existsServVO.getActivationDate().before($endDate)) ||
+				    		 (existsServVO.getExpirationDate() != null  &&  !existsServVO.getExpirationDate().after($endDate)))
+						{  	 #Entrando ak, serviï¿½o em COD_SERV_INDIVIDUAL, considerado expirado para o periodo
+							 listElegVO.remove(j); j-=1;	continue;
+						}
+						# Consultando existï¿½ncia do pacote no contrato - Query 5
+						# Se COD_PCTE_INDIVIDUAL == NULL, nem faz Q5, jï¿½ ï¿½ candidato
+						if (elegVO.getCodPcteIndiv() != null && existsServVO.getPrmValueId() != null){
+							ContractExistsPackVO existsPackVO = (ContractExistsPackVO) contrExistsPackCache.getFromCache(
+										ContractExistsPackVO.createAlternateKey(existsServVO.getPrmValueId(), elegVO.getCodPcteIndiv(),
+										$endDate));
+							#Nï¿½o existe o pacote para o serviï¿½o: registro nï¿½o mais candidato
+							if (null == existsPackVO){
+								listElegVO.remove(j); j-=1; continue;
+							}
+							# Se COD_PCTE_INDIVIDUAL != NULL e PRM_VALUE_ID==NULL, jï¿½ nï¿½o existe pacote no serviï¿½o, registro nï¿½o candidato			
+						}else if(elegVO.getCodPcteIndiv() != null && existsServVO.getPrmValueId() == null){
+									listElegVO.remove(j); j-=1; continue;
+							  }
+					} //if existsServVO
+					else {
+						  # COD_SERV_INDIVIDUAL != NULL e existsServVO==NULL(Q4), contrato sem serviï¿½o, torna-se nao mais candidato
+						  listElegVO.remove(j); j-=1; continue;
+						 }
+				} //if cod_serv_Individual
+				
+				########## FIM DO CRITERIO DE ELEGIBILIDADE INDIVIDUAL ###########
+				
+				########## INICIO DO CRITERIO DE ELEGIBILIDADE LA	   ###########
+					
+				if ("L".equalsIgnoreCase($type)){
+					#Validaï¿½ï¿½o de conta nivel 10, que nï¿½o executa Query 6, pois nï¿½o tem niveis superiores para varrer
+					if (-1 == $custCode.indexOf(".",2)){
+						#Por nao haver niveis superiores, as colunas LA devem ser nulas
+						if (elegVO.getCodPlanoLA()!=null || elegVO.getCodServLA()!=null || elegVO.getCodPcteLA()!=null){
+							listElegVO.remove(j); j-=1; continue;
+						}
+					}
+					#Validando conta(custCode) de nivel > 10
+					#Se codPlanoLA == null, ele jï¿½ ï¿½ candidato a eleito, nï¿½o executando Q6
+					else{
+						if (elegVO.getCodPlanoLA() != null){
+							ScanStructureLevelVO scanVO = (ScanStructureLevelVO) scanStructLevelCache.getFromCache(
+													ScanStructureLevelVO.createKey($custCode, elegVO.getCodPlanoLA(),
+													elegVO.getCodServLA(), elegVO.getCodPcteLA()));
+							#Em nenhum nivel superior, existe algum contrato atendendo LA
+							if (scanVO == null){
+								listElegVO.remove(j); j-=1; continue;
+							}			
+						}									
+					}//else nivel != 10
+				} // if LA
+					
+				########## FIM DO CRITERIO DE ELEGIBILIDADE LA ###########
+				
+				# Atï¿½ ak, registro ainda ï¿½ candidato, atendendo critï¿½rios de elegibilidade INDIVIDUAL e LA
+				# Validaï¿½ï¿½o final para ser eleito, verificando perï¿½odo dos serviï¿½os COD_SERV_DESVIO
+				# Se encontrado pelo menos um serviï¿½o no periodo, ja estï¿½ eleito o registro, 
+				# podendo validar o valor da assinatura, posteriormente com o Map Plano/Valor.
+					
+				#Lista de Serviï¿½os de COD_SERV_DESVIO, onde serï¿½ consultado um por vez		
+				String [] array = elegVO.getCodServDesvio().split(",");
+				boolean regElected = false; //indica se na lista de serviï¿½os de COD_SERV_DESVIO, existe pelo menos um ativo
+				for (int i=0; i < array.length; i++){
+					ContractExistsServicesVO periodServVO = (ContractExistsServicesVO) contrExistsServCache.getFromCache(
+							 							 	 ContractExistsServicesVO.createAlternateKey($contract, array [i]));
+					if (periodServVO != null){
+						# Verificando vigï¿½ncia dos serviï¿½os - After==Depois  Before==Antes
+						# Data ativaï¿½ï¿½o serviï¿½o nï¿½o nula e data ativada antes do corte E
+						# Data expiraï¿½ï¿½o nula OU data expiraï¿½ï¿½o ï¿½ depois Data Corte
+						# Cenario: A) Se dataActiveService == dia do corte, nï¿½o ï¿½ considerado ativo 
+						#          Resumindo: Se ativa serviï¿½o hoje, sï¿½ conta como ativo amanhï¿½
+						# 		   B) Se dataDesactiveService == dia do corte, ï¿½ considerado ativo
+						#		   Resumindo: Se desativa serviï¿½o hoje, ainda ï¿½ considerado hoje como ativo
+						if ((periodServVO.getActivationDate() != null && periodServVO.getActivationDate().before($endDate)) &&
+				    		(periodServVO.getExpirationDate() == null || periodServVO.getExpirationDate().after($endDate))
+						   ){
+						    #Serviï¿½o considerado ativo no perï¿½odo
+							regElected = true;
+							break; //pï¿½ra o for, qdo pelo menos um ativo
+						}
+					}//if periodServVO
+				}//for period SERV_COD_DESVIO
+				#Registro nï¿½o possui nenhum serviï¿½o ativo no periodo	
+				if (regElected == false){
+					listElegVO.remove(j); j-=1; continue;
+				}
+				#Havendo mais de um eleito para o mesmo contrato, serï¿½ escolhido o de menor valor
+				#Armazena o registro eleito, se for unico OU nao sendo unico, se for de menor valor que o ja armazenado
+				if ( null == uniqueElected || (elegVO.getVlrDesvio() < uniqueElected.getVlrDesvio()) ){
+					uniqueElected = elegVO;
+				}
+			} //for elegVO
+			#Inserindo no Map o contrato/valor(VO) de cada acesso eleito, podendo ser um unico registro eleito
+			if (null != uniqueElected){ 
+				$map.put($contract, uniqueElected);
+			}
+		} //if plan
+		# Quando nï¿½o existï¿½ncia da combinaï¿½ï¿½o Plano/estado na Query 1
+		else if (plan == null || (plan != null && plan.getShortDesc() == null) ){
+			results.add( buildR33ConsequencePlan(dimensionCache, consequenceBuilder, $carrier, "Plano/Estado do contrato inexistente na tabela",
+												 $type, $contract, $ratePlan, $access ));
+		}
+end

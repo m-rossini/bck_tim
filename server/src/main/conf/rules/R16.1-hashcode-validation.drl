@@ -1,0 +1,128 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.om.invoice.Receipt;
+import br.com.auster.om.invoice.ChargedTax;
+import java.util.List;
+import java.util.Iterator;
+
+import br.com.auster.tim.billcheckout.util.ICMSHashGenerator;
+
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.filter.request.BillcheckoutRequestWrapper;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+/**
+ * RULE #16.1: Hashcode validation
+ */
+ rule "Regra 16-01 - Hashcode empty" 
+	salience 70	 
+	when
+		$acc : Account($accNo : accountNumber)
+
+		BillcheckoutRequestWrapper ( $request : request -> ( ($request.getAttributes().get("mode.id") != null) && ("S2".equals($request.getAttributes().get("mode.id"))) )
+		                           )
+		                            
+		$inv : Invoice( $cnpjCpf : cnpjCpf )		
+
+		$nf : Receipt( 
+			$receiptNbr : receiptNbr,
+			$carrierCode : carrierCode , 
+			$uf : carrierState , 
+			$totalAmount : totalAmount,
+			$hashcode : digitalAuthKey -> ($hashcode == null)
+		)
+	then
+			consequenceBuilder.setRule("R16-1","Validação de hashcode");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+		
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription("O hashcode desta nota fiscal está vazio.");
+			c.addAttribute("Número da NF", $receiptNbr);
+			c.addNullAttribute("Hashcode recebido");
+			c.addNullAttribute("Hashcode esperado");
+			results.add(c);
+end
+
+
+/**
+ * RULE #16.1: Hashcode validation
+ */
+ rule "Regra 16-01 - Hashcode not empty" 
+	salience 70	 
+	when
+		$acc : Account($accNo : accountNumber)
+
+		BillcheckoutRequestWrapper ( $request : request -> ( ($request.getAttributes().get("mode.id") != null) && ("S2".equals($request.getAttributes().get("mode.id"))) )
+		                           )
+				
+		$inv : Invoice( $cnpjCpf : cnpjCpf )		
+
+		$nf : Receipt( 
+			$receiptNbr : receiptNbr,
+			$carrierCode : carrierCode , 
+			$uf : carrierState , 
+			$totalAmount : totalAmount,
+			$hashcode : digitalAuthKey -> ($hashcode != null)
+		)
+	then
+		// goes through taxes list to pick ICMS related tax info
+		boolean foundICMS = false;
+		String expectedHashcode = null;
+
+		for(Iterator itr = $nf.getTaxes().iterator() ; itr.hasNext(); ) {
+			ChargedTax tax = (ChargedTax) itr.next();
+			if( tax.getTaxName().indexOf("ICMS") == 0 ) {
+				foundICMS = true;
+				expectedHashcode = ICMSHashGenerator.generateFiscalHashcode(
+													 $cnpjCpf, $receiptNbr, 
+													 $totalAmount.toString(),
+													 String.valueOf( tax.getTaxableAmount() ),
+													 String.valueOf( tax.getTaxAmount() ) );
+				break;
+			}
+		}
+
+		if ( ! foundICMS ) {
+			// will use taxeable amount as zero 
+			expectedHashcode = ICMSHashGenerator.generateFiscalHashcode(
+												 $cnpjCpf, $receiptNbr, 
+												 $totalAmount.toString(),
+												 "0.00", "0.00" );
+		}
+
+		// checks if there's no hashcode in this section
+		if (! expectedHashcode.equals($hashcode)) {
+			consequenceBuilder.setRule("R16-1","Validação de hashcode");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+		
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription("O hashcode desta nota fiscal não foi gerado corretamente.");
+			c.addAttribute("Número da NF", $receiptNbr);
+			c.addAttribute("Hashcode recebido", $hashcode );
+			c.addAttribute("Hashcode esperado", expectedHashcode );
+			results.add(c);
+		}
+end

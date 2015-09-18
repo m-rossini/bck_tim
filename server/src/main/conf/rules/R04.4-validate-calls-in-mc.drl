@@ -1,0 +1,458 @@
+#created on: 15/10/2007
+package br.com.auster.tim.billchekout
+
+#list any import classes here.
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.UsagePromotionDetail;
+import br.com.auster.tim.om.invoice.ServiceReceiptDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.billcheckout.param.MpufftabVO;
+import br.com.auster.tim.billcheckout.param.MpulkfxoVO;
+import br.com.auster.tim.billcheckout.param.ContractServicesVO;
+import br.com.auster.tim.billcheckout.param.PlansVO;
+import br.com.auster.tim.billcheckout.param.DwPromoMcVO;
+import br.com.auster.om.util.UnitCounter;
+import br.com.auster.common.rules.GlobalForLog;
+import java.util.Date;
+import java.text.SimpleDateFormat;
+import java.lang.StringBuffer;
+
+import br.com.auster.tim.billcheckout.tariff.MicrocellRatesVO;
+import br.com.auster.tim.billcheckout.tariff.CachedMicrocellRatesVO;
+
+#declare any global variables here
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.tim.billcheckout.param.DwPromoMcCache dwPromoMcCache;
+global br.com.auster.tim.billcheckout.param.MpufftabCache mpufftabCache;
+global br.com.auster.tim.billcheckout.param.MpulkfxoCache mpulkfxoCache;
+global br.com.auster.tim.billcheckout.param.PlansCache planCache;
+global br.com.auster.tim.billcheckout.param.ContractServicesCache contractServicesCache;
+global br.com.auster.tim.billcheckout.tariff.MicrocellRatesCache microcellRatesCache;
+global br.com.auster.tim.billcheckout.tariff.MicrocellSGTRatesCache microcellSGTRatesCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+rule "Regra 4.4 - Could not find MC"
+
+	when
+		TIMUsageDetail ( microCellScalingFactor != null,
+						 microCellDesc == null,
+					     $amountAfterPromotionsDisc : totalAmount,
+					     $discountAmount : discountAmount > 0,					  
+					     $destinationNumber : calledNumber,					  
+					     $tariffZoneDesc : tariff,					  
+					     $callDate : usageDate,
+					     $callTime : usageTime,
+					     $voiceFlag : voiceUsage,
+					     $eventFlag : eventUsage,
+					     $sectionName : sectionName,
+					     $contractNumber : contractNumber,
+					     $accessNumber : channelId
+					   )
+					   
+	Account( $carrierCode : carrierCode,
+			 $carrierState : carrierState
+		   )					   
+	then
+		consequenceBuilder.setRule("R04-4","Validação Chamadas em MC");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+	
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Evento foi beneficiado por micro-célula não mapeada.");
+		c.addAttribute("Número do Contrato", $contractNumber);
+		c.addAttribute("Número do Acesso", $accessNumber);
+		c.addAttribute("Nome da Seção", $sectionName);
+		c.addDateAttribute("Data da Chamada", $callDate);
+		c.addTimeAttribute("Hora da Chamada", $callTime);
+		c.addAttribute("Número de Destino", $destinationNumber);
+		c.addNullAttribute("Código da MC");
+		c.addNullAttribute("Descrição da MC");
+		c.addAttribute("Zona Tarifária", $tariffZoneDesc);
+		c.addAttribute("Valor Final da Chamada", $amountAfterPromotionsDisc);
+		c.addAttribute("Valor de Descontos", $discountAmount);
+		c.addNullAttribute("Data de Ativação do Serviço");
+		c.addNullAttribute("Data de Expiração do Serviço");
+		c.addNullAttribute("Valor Correto da Fatura");
+	
+		results.add(c);	
+end
+
+
+rule "Regra 4.4 - Validating calls in MC - Activation Date"
+
+	when
+
+		$usage : TIMUsageDetail ( $microCellDesc : microCellDesc -> ($microCellDesc != null && !$microCellDesc.equals("LD41F")),
+								  amountBeforePromotions > 0,
+								  $amountBeforePromotions : amountBeforePromotions,
+								  $amountAfterPromotionsDisc : totalAmount,
+								  $discountAmount : discountAmount > 0,
+								  $destinationNumber : calledNumber,
+								  $tariffZoneDesc : tariff,
+								  $callDate : usageDate,
+								  $callTime : usageTime,
+								  $roundedDuration : roundedDuration,
+								  $destinationAreaCode : destinationAreaCode,
+								  $voiceFlag : voiceUsage,
+								  $eventFlag : eventUsage,
+								  $sectionName : sectionName,
+								  $contractNumber : contractNumber,
+								  $accessNumber : channelId,
+								  $ratePlan : ratePlan 							  							 
+								)
+
+		$account : Account( $carrierCode : carrierCode,
+							$carrierState : carrierState
+				 		  )
+		
+		eval ($voiceFlag.booleanValue() || $eventFlag.booleanValue())
+		
+	then	
+	
+		Date activation = null;
+		Date expiration = null;
+		MpufftabVO mpufftab = (MpufftabVO) mpufftabCache.getFromCache(MpufftabVO.createAlternateKey($contractNumber,$microCellDesc));
+		GlobalForLog.log("INFO", "Running mpufftab cache for " + $contractNumber+"/"+$microCellDesc+ " = Found " + mpufftab);
+		if ( mpufftab != null ) {
+			ContractServicesVO contractServices = null;			
+			DwPromoMcVO dwPromoMcVO = (DwPromoMcVO) dwPromoMcCache.getFromCache(DwPromoMcVO.createAlternateKey(mpufftab.getPromotionCode()));			
+			PlansVO plan = (PlansVO) planCache.getFromCache(PlansVO.createAlternateKey($ratePlan, $carrierState));	
+			
+			GlobalForLog.log("INFO", "Running DWPromo cache for  " + mpufftab.getPromotionCode() + " = " + dwPromoMcVO);
+			
+			if (dwPromoMcVO != null && dwPromoMcVO.getServiceCode() != null && plan != null) {
+			
+				String[] serviceCodes = dwPromoMcVO.getServiceCode().split(",");
+				for (int i=0; i < serviceCodes.length; i++) {				  		    
+					contractServices = (ContractServicesVO) contractServicesCache.getFromCache(ContractServicesVO.createAlternateKey($contractNumber, serviceCodes[i], plan.getTmCode()));				
+					if (contractServices != null) { break; }
+				}
+				
+				if ( contractServices != null ) {
+					activation = contractServices.getActivationDate();
+					expiration = contractServices.getExpirationDate();
+					if ( (activation == null) ||
+					     activation.after($callDate) ||
+					     ((expiration != null) && (expiration.before($callDate))) ) {
+
+						consequenceBuilder.setRule("R04-4","Validação Chamadas em MC");
+						consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+						consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+						consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+						consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+						consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+		
+						TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+						c.setDescription("Chamada realizada fora do período de vigência da micro-célula.");
+						c.addAttribute("Número do Contrato", $contractNumber);
+						c.addAttribute("Número do Acesso", $accessNumber);
+						c.addAttribute("Nome da Seção", $sectionName);
+						c.addDateAttribute("Data da Chamada", $callDate);
+						c.addTimeAttribute("Hora da Chamada", $callTime);
+						c.addAttribute("Número de Destino", $destinationNumber);
+						c.addAttribute("Código da MC", $microCellDesc);
+						c.addAttribute("Descrição da MC", mpufftab.getDescription());
+						c.addAttribute("Zona Tarifária", $tariffZoneDesc);
+						c.addAttribute("Valor Final da Chamada", $amountAfterPromotionsDisc);
+						c.addAttribute("Valor de Descontos", $discountAmount);
+						if (activation == null) {
+							c.addNullAttribute("Data de Ativação do Serviço");
+						} else {
+							c.addAttribute("Data de Ativação do Serviço", activation);
+						}
+						if (expiration == null) {
+							c.addNullAttribute("Data de Expiração do Serviço");
+						} else {
+							c.addAttribute("Data de Expiração do Serviço", expiration);
+						}
+						c.addNullAttribute("Valor Correto da Fatura");
+	
+						results.add(c);
+					}
+				}
+			}			
+		}
+end
+
+
+rule "Regra 4.4 - Validating calls in MC - Charged amount"
+
+	when
+
+		TIMUsageDetail ( $microCellDesc : microCellDesc -> ($microCellDesc != null && !$microCellDesc.equals("LD41F")),
+					     amountBeforePromotions > 0,
+						 $amountBeforePromotions : amountBeforePromotions,
+						 $amountAfterPromotionsDisc : totalAmount,
+						 $discountAmount : discountAmount > 0,
+						 $destinationNumber : calledNumber,
+						 $tariffZoneDesc : tariff,
+						 $callDate : usageDate,
+						 $callTime : usageTime,
+						 $roundedDuration : roundedDuration,
+						 $destinationAreaCode : destinationAreaCode,
+						 $tariff : tariff,
+						 $voiceFlag : voiceUsage,
+						 $eventFlag : eventUsage,
+						 $sectionName : sectionName,
+						 $contractNumber : contractNumber,
+						 $accessNumber : channelId,
+						 $rateplan : ratePlan 
+						)
+
+		Account( $carrierCode : carrierCode,
+				 $carrierState : carrierState,
+				 $custCode : accountNumber )
+
+		eval ($voiceFlag.booleanValue() || $eventFlag.booleanValue())
+
+	then
+
+		//MpufftabVO mpufftab = (MpufftabVO) mpufftabCache.getFromCache(MpufftabVO.createAlternateKey($contractNumber,$microCellDesc));
+		boolean errorFound = false;
+		// Loading tariffs from SGT database
+		CachedMicrocellRatesVO cachedVo = null; 
+		if ($microCellDesc.startsWith("SGT")) {
+		
+			PlansVO plan = (PlansVO) planCache.getFromCache(PlansVO.createAlternateKey($rateplan, $carrierState));
+			if (plan != null) { 
+		
+				cachedVo = (CachedMicrocellRatesVO) microcellSGTRatesCache.getFromCache(
+									CachedMicrocellRatesVO.createAlternateKey( $microCellDesc, plan.getDescription(), $custCode ) );
+			}
+		
+		// else - when microcell is not SGT
+		} else {
+			cachedVo = (CachedMicrocellRatesVO) microcellRatesCache.getFromCache(
+								CachedMicrocellRatesVO.createKey( $microCellDesc, $rateplan, $carrierState ) );
+		}
+
+			// getting tariff based on event date				
+		if (cachedVo != null) {
+			MicrocellRatesVO vo = cachedVo.getMicrocell($callDate);
+			if ( vo != null ) {
+				double priceValue = vo.getPriceValue();
+				double scalefactorDbl = vo.getScalefactorDbl();
+				String scalefactorStr = vo.getScalefactorStr();
+				double result = 0.0;
+				double calculatedValue = 0.0;
+				// gets multiplier based on unitType(UMCODE)
+				double multiplier = 0.0;
+				double discount = 0.0;
+	
+				if ($eventFlag.booleanValue()) {
+					multiplier = 1;
+				} else {
+				 	multiplier = getMultiplier(vo.getUmcode(), $roundedDuration.getUnits());
+				 }
+	
+				GlobalForLog.log("DEBUG", "Checking amount for usage "+$callDate + "/" + $callTime);
+				GlobalForLog.log("DEBUG", "Got ScaleFactor and PriceValue as " + scalefactorStr + " / " + priceValue);
+				GlobalForLog.log("DEBUG", "Got Multiplier of "  + multiplier + " for units "+  $roundedDuration.getUnits());
+				if ( scalefactorStr != null && scalefactorStr.length() > 0 ) {
+					if ( scalefactorStr.indexOf(',') != -1 || scalefactorStr.indexOf('.') != -1 ) {
+						discount = 	$amountBeforePromotions.doubleValue() * scalefactorDbl;
+						calculatedValue = $amountBeforePromotions.doubleValue() - discount;
+						result = calculatedValue - $amountAfterPromotionsDisc.doubleValue();
+						if ( Math.abs(result) > 0.010001 ) {
+							errorFound = true;
+						}
+						GlobalForLog.log("DEBUG", "Error (" + errorFound + ") for such usage result was " + result + " = " + calculatedValue + " - " + $amountAfterPromotionsDisc);
+					} else {
+						calculatedValue = (scalefactorDbl/100) * multiplier;
+						result = calculatedValue - $amountBeforePromotions.doubleValue();
+						if ( Math.abs(result) > 0.010001 ) {
+							errorFound = true;
+						}
+						GlobalForLog.log("DEBUG", "Error (" + errorFound + ") for such usage result was " + result + " = " + calculatedValue + " - " + $amountBeforePromotions);
+					}
+				} else if ( priceValue >= 0 ) {
+					calculatedValue = priceValue * multiplier;
+					result = calculatedValue - $amountBeforePromotions.doubleValue();
+					if ( Math.abs(result) > 0.010001 ) {
+						errorFound = true;
+					}
+					GlobalForLog.log("DEBUG", "Error (" + errorFound + ") for such usage result was " + result + " = " + calculatedValue + " - " + $amountBeforePromotions);
+				}
+	
+				if (errorFound) {
+	
+					consequenceBuilder.setRule("R04-4","Validação Chamadas em MC");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+	
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("Valor encontrado do desconto da micro-célula diverge do calculado.");
+					c.addAttribute("Número do Contrato", $contractNumber);
+					c.addAttribute("Número do Acesso", $accessNumber);
+					c.addAttribute("Nome da Seção", $sectionName);
+					c.addDateAttribute("Data da Chamada", $callDate);
+					c.addTimeAttribute("Hora da Chamada", $callTime);
+					c.addAttribute("Número de Destino", $destinationNumber);
+					c.addAttribute("Código da MC", $microCellDesc);
+					c.addAttribute("Descrição da MC", cachedVo.getDescription());
+					c.addAttribute("Zona Tarifária", $tariffZoneDesc);
+					c.addAttribute("Valor Final da Chamada", $amountBeforePromotions);
+					c.addAttribute("Valor de Descontos", $discountAmount);
+					c.addDoubleAttribute("Valor Correto da Fatura", calculatedValue);
+	
+					results.add(c);
+				}
+			}
+		}
+end
+
+rule "Regra 4.4 - Validating calls in MC - MC Called Number"
+
+	when
+
+		TIMUsageDetail ( $microCellDesc : microCellDesc -> ($microCellDesc != null && !$microCellDesc.equals("LD41F")),
+						 amountBeforePromotions > 0,
+						 $amountBeforePromotions : amountBeforePromotions,
+						 $amountAfterPromotionsDisc : totalAmount,
+						 $discountAmount : discountAmount > 0,
+						 $destinationNumber : calledNumber,
+						 $tariffZoneDesc : tariff,
+						 $callDate : usageDate,
+						 $callTime : usageTime,
+						 $roundedDuration : roundedDuration,
+						 $destinationAreaCode : destinationAreaCode,
+						 $tariff : tariff,
+						 $voiceFlag : voiceUsage,
+						 $eventFlag : eventUsage,
+						 $sectionName : sectionName,
+						 $contractNumber : contractNumber,
+						 $accessNumber : channelId
+						)
+
+		$account : Account( $carrierCode : carrierCode,
+							$carrierState : carrierState
+				 		  )
+
+		eval ($voiceFlag.booleanValue() || $eventFlag.booleanValue())
+
+	then
+
+		//just to get the MC description
+		MpufftabVO mpufftab = (MpufftabVO) mpufftabCache.getFromCache(MpufftabVO.createAlternateKey($contractNumber,$microCellDesc));
+
+		if (mpufftab != null) {
+
+			MpulkfxoVO mpulkfxo = (MpulkfxoVO) mpulkfxoCache.getFromCache(MpulkfxoVO.createAlternateKey($contractNumber, $microCellDesc));
+
+			GlobalForLog.log("DEBUG", "Checking mpulkfxo for usage "+$callDate + "/" + $callTime);
+			if ( mpulkfxo == null || !verifyIfAllowedDestNum(getFormattedDestNum($destinationNumber, $destinationAreaCode), getFormattedDestNum(mpulkfxo.getDestination(), null))) {
+
+				consequenceBuilder.setRule("R04-4","Validação Chamadas em MC");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+				c.setDescription("Número de destino da chamada não é elegível para esta micro-célula.");
+				c.addAttribute("Número do Contrato", $contractNumber);
+				c.addAttribute("Número do Acesso", $accessNumber);
+				c.addAttribute("Nome da Seção", $sectionName);
+				c.addDateAttribute("Data da Chamada", $callDate);
+				c.addTimeAttribute("Hora da Chamada", $callTime);
+				c.addAttribute("Número de Destino", $destinationNumber);
+				c.addAttribute("Código da MC", $microCellDesc);
+				c.addAttribute("Descrição da MC", mpufftab.getDescription());
+				c.addAttribute("Zona Tarifária", $tariffZoneDesc);
+				c.addAttribute("Valor Final da Chamada", $amountBeforePromotions);
+				c.addAttribute("Valor de Descontos", $discountAmount);
+				c.addNullAttribute("Valor Correto da Fatura");
+
+				results.add(c);
+			} else {
+				GlobalForLog.log("DEBUG", "Record is ok: verify is " + verifyIfAllowedDestNum(getFormattedDestNum($destinationNumber, $destinationAreaCode), getFormattedDestNum(mpulkfxo.getDestination(), null)) );
+			}
+
+		}
+
+end
+
+//	function to get the formatted destination number for Voice Use like it is in the table MPULKFXO
+function String getFormattedDestNum(String destNum, String destAreaCode) {
+
+	StringBuffer destNumStringBuffer = new StringBuffer();
+
+	for (int i = 0; i < destNum.length(); i++) {
+		if (Character.isDigit(destNum.charAt(i)) || (destNum.charAt(i) == '*')) {
+			destNumStringBuffer.append(destNum.charAt(i));
+		}
+	}
+
+	String destNumFormattedString = "";
+
+	if (destNumStringBuffer.length() == 8) {
+		destNumFormattedString = "00" + "55" + destAreaCode + destNumStringBuffer.toString();
+	} else if (destNumStringBuffer.length() == 11) {
+		if (destNumStringBuffer.charAt(0) == '0') {
+			destNumStringBuffer.deleteCharAt(0);
+			destNumFormattedString = "00" + "55" + destNumStringBuffer.toString();
+		} else {
+			destNumFormattedString = "055" + destNumStringBuffer.toString();
+		}
+	} else if ((destNumStringBuffer.length() == 2) || (destNumStringBuffer.length() == 12)) {
+		destNumFormattedString = "00" + destNumStringBuffer.toString();
+	} else {
+		destNumFormattedString = destNumStringBuffer.toString();
+	}
+
+	return destNumFormattedString;
+
+}
+
+function boolean verifyIfAllowedDestNum(String destNumFile, String destNumDB) {
+
+	if (destNumDB.trim().equals("*")) {
+		return true;
+	} else if (destNumDB.trim().equals("0055")) {
+		return destNumFile.trim().startsWith(destNumDB.trim());
+	} else {
+		return destNumFile.trim().equals(destNumDB.trim());
+	}
+
+}
+
+function double getMultiplier(int umcode, long units) {
+
+	switch (umcode) {
+	case 1:
+		return units;
+	case 8:
+		return units/60;
+	case 7:
+		return 1;
+	case 6:
+		return 1;
+	case 4:
+		return 1;
+	case 3:
+		return 1;
+	case 2:
+		return 1;
+	default:
+		return 1;
+	}
+
+}

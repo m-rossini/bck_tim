@@ -1,0 +1,124 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.ReceiptDetail;
+import br.com.auster.om.invoice.ChargedTax;
+import br.com.auster.billcheckout.model.TaxRate;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+import br.com.auster.tim.om.invoice.ServiceReceiptDetail;
+
+import br.com.auster.tim.billcheckout.util.AssociatedFacts;
+
+global br.com.auster.billcheckout.model.cache.TaxRateCache taxRateCache;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+function String getTaxNameWithoutLDCode(String _taxName) {
+	if ((_taxName == null) || (_taxName.indexOf("-") <= 0)) {
+	   return _taxName;
+	}
+	return _taxName.substring(0, _taxName.indexOf("-"));
+}
+
+
+/**
+ * Finds the tax rate defined in the database, and associates it with the loaded tax record for the service
+ */
+rule "Regra R15.2 - Service Taxes"
+	salience 70
+	when
+		Account( $carrierCode : carrierCode,
+		         $carrierState : carrierState
+		       )
+
+		ServiceReceiptDetail ( $fiscalCode : fiscalCode,
+							   $caption : caption,
+		                       subscription == false,
+							   $taxes : taxes
+							 )
+
+	then
+	TaxRate tr = null;
+	// checking each tax information
+	for (java.util.Iterator it = $taxes.iterator(); it.hasNext();) {
+		 ChargedTax taxInfo = (ChargedTax) it.next();
+		tr = (TaxRate) taxRateCache.getFromCache(TaxRate.createAlternateKey($carrierState, getTaxNameWithoutLDCode(taxInfo.getTaxName()), $fiscalCode));
+		// if not null, check taxed rate
+		if (tr != null) {
+			if ( Math.abs( Math.abs(tr.getTaxRate()) - Math.abs(taxInfo.getTaxRate()) ) >= 0.01 ) {
+				consequenceBuilder.setRule("R15-2","ICMS Serviço divergente da UF");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+				c.setDescription("A alíquota de imposto aplicada a este serviço não confere com a cadastrada na base de referência.");
+				c.addAttribute("Nome do Serviço", $caption);
+				c.addAttribute("Imposto", taxInfo.getTaxName());
+				c.addDoubleAttribute("Alíquota Encontrada", taxInfo.getTaxRate());
+				c.addDoubleAttribute("Alíquota Esperada", tr.getTaxRate());
+				results.add(c);
+			}
+		}
+	}
+end
+
+/**
+ * Finds the tax rate defined in the database, and associates it with the loaded tax record for the usage group
+ */
+rule "Regra R15.2 - Contract Usage Groups Taxes"
+	salience 70
+	when
+		Account( $carrierCode : carrierCode,
+		         $carrierState : carrierState
+		       )
+
+		GroupItemReceiptDetail ( $fiscalCode : fiscalCode,
+								 $caption : caption,
+		                         OCC == false,
+							     $taxes : taxes
+							   )
+
+	then
+	TaxRate tr = null;
+	// checking each tax information
+	for (java.util.Iterator it = $taxes.iterator(); it.hasNext();) {
+		ChargedTax taxInfo = (ChargedTax) it.next();
+		tr = (TaxRate) taxRateCache.getFromCache(TaxRate.createAlternateKey($carrierState, getTaxNameWithoutLDCode(taxInfo.getTaxName()), $fiscalCode));
+		// if not null, check taxed rate
+		if (tr != null) {
+			if ( Math.abs( Math.abs(tr.getTaxRate()) - Math.abs(taxInfo.getTaxRate()) ) >= 0.01 ) {
+				consequenceBuilder.setRule("R15-2","ICMS Serviço divergente da UF");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+				c.setDescription("A alíquota de imposto aplicada a este serviço não confere com a cadastrada na base de referência.");
+				c.addAttribute("Nome do Serviço", $caption);
+				c.addAttribute("Imposto", taxInfo.getTaxName());
+				c.addDoubleAttribute("Alíquota Encontrada", taxInfo.getTaxRate());
+				c.addDoubleAttribute("Alíquota Esperada", tr.getTaxRate());
+				results.add(c);
+			}
+		}
+	}
+end
+

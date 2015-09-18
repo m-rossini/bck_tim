@@ -1,0 +1,14 @@
+LOAD DATA
+BADFILE 'log/plans.bad'
+DISCARDFILE 'log/plans.dsc'
+APPEND
+INTO TABLE QLF_PLANS
+FIELDS TERMINATED BY ","
+( 
+ 	OBJID 				EXPRESSION "seq1.nextval", 
+	TMCODE 				position(1:2048) "loader.word(:tmcode,5,';')",
+	DESCRIPTION 	position(1:1) "loader.word(:tmcode,6,';')",
+	SHORT_DESC 		position(1:1) "loader.word(:tmcode,7,';')",
+	PLAN_NAME 		position(1:1) "loader.word(:tmcode,8,';')",
+	STATE 				position(1:1) "loader.word(:tmcode,9,';')"
+)

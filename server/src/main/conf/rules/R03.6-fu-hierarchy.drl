@@ -1,0 +1,94 @@
+package br.com.auster.tim.billchekout;
+
+import java.util.Map;
+import java.util.Iterator;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.billcheckout.util.FreeUnitAccumulator;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+global br.com.auster.tim.billcheckout.util.FreeUnitHelper fuHelper;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+
+/**
+ *  This rule depends on DRL 'R03.x-INIT.drl'
+ */
+
+rule "Regra R03.6 - Validating FreeUnits Hierarchy"
+	salience 70
+	when
+
+		Account ( $custCode : accountNumber,
+				  $carrierCode : carrierCode
+				)
+
+		$fu1 : FreeUnitAccumulator ( custCode == $custCode,
+									 $periodStart1 : periodStart,
+									 $typeOfUsage1 : typeOfUsage,
+									 $shdes1 : shortDescription,
+									 $contract1 : contractId
+								   )
+
+		$fu2 : FreeUnitAccumulator ( custCode == $custCode,
+									 $periodStart2 : periodStart == $periodStart1,
+									 $typeOfUsage2 : typeOfUsage == $typeOfUsage1,
+									 $shdes2 : shortDescription -> (! $shdes1.equals($shdes2)),
+									 // both NULL or ( both not-NULL and equal )
+									 $contract2 : contractId -> ( (($contract1 == null) && ($contract2 == null)) || (($contract1 != null) && ($contract2 != null) && $contract1.equals($contract2)) )
+								   )
+
+		// This eval is only to make sure each pair of FreeUnitAccumulators will match only once; that is,
+		//   if A matches with B (A + B) there will be no entry in the agenda for the tuple B + A
+		eval ($fu1.hashCode() > $fu2.hashCode())
+	then
+	GlobalForLog.log("DEBUG", "Matched " + $shdes1 + "/" + $periodStart1 + "/" + $typeOfUsage1 + " with " + $shdes2 + "/" + $periodStart2 + "/" + $typeOfUsage2);
+	// check if all FU cenarios are equal (query 1)
+	if (fuHelper.packagesHaveIdenticalScenarios($shdes1, $shdes2)) {
+		// check order (query 3)
+		String firstFup = fuHelper.determineConsumptionOrder($shdes1, $shdes2);
+		GlobalForLog.log("DEBUG", "Checking which package should be consumed first. And that is the package : " + firstFup);
+		// If null then both have the same order
+		if (firstFup != null) {
+			FreeUnitAccumulator first = $fu1;
+			FreeUnitAccumulator second = $fu2;
+			if (second.getShortDescription().equals(firstFup)) {
+				first = $fu2;
+				second = $fu1;
+			}
+			// validating order
+			if (first.getMaxDatetime().after(second.getMinDatetime())) {
+
+				consequenceBuilder.setRule("R03-6","Hierarquia franquia pct/promoção");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+				c.setDescription("O consumo da franquia não respeitou a ordem definida na configuração dos pacotes.");
+				c.addAttribute("Pacote Prioritário", first.getFullDescription());
+				c.addDateAttribute("Último Consumo", first.getMaxDatetime());
+				c.addAttribute("Pacote Secondário", second.getFullDescription());
+				c.addDateAttribute("Último Consumo", second.getMinDatetime());
+				results.add(c);
+
+			}
+		}
+	}
+end
+

@@ -1,0 +1,254 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.DimensionCache;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.FreeUnitsReceiptDetail;
+import br.com.auster.tim.billcheckout.tariff.RatesGuidingVO;
+import br.com.auster.common.lang.NamedHashMap;
+import br.com.auster.om.util.ParserUtils;
+import br.com.auster.om.util.UnitCounter;
+import java.util.HashMap;
+import java.util.Iterator;
+import br.com.auster.tim.billcheckout.tariff.PricePlanRatesVO;
+import br.com.auster.tim.billcheckout.tariff.CachedPricePlanRatesVO;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global br.com.auster.tim.billcheckout.tariff.PricePlanRatesCache pricePlanCache;
+global br.com.auster.tim.billcheckout.tariff.PricePlanRatesCache alternatePricePlanCache;
+global java.util.List results;
+
+
+
+
+rule "R01.23 - Build grouping map"
+	salience 95
+	when
+		Account ( )
+	then
+		// Map of CO_ID = SVC[]
+		//                SVC is Map of SVC = TZ[]
+		//                                    TZ is Map of TZ = UnitCounter
+		assert( new NamedHashMap("R01.23-usage-grouping") );
+		// Map of CO_ID = SVC[]
+		//                SVC is Map of SVC = TZ[]
+		//                                    TZ is Map of TZ = Rate value, as Double
+		assert( new NamedHashMap("R01.23-contract-rates") );
+end
+
+
+rule "R01.23 - Grouping Data Usage"
+	salience 90
+	when
+		TIMUsageDetail( dataUsage == true,
+						$svc : svcId,
+					 	$tz : tariff,
+					 	$dur : roundedDuration,
+					 	$coid : contractNumber  )
+		
+		$groupMap : NamedHashMap(name == "R01.23-usage-grouping")		
+	then
+	
+		HashMap map = (HashMap) $groupMap.get($coid); 
+		if (map == null) {
+			$groupMap.put($coid, new HashMap());
+			map = (HashMap) $groupMap.get($coid);
+		}
+		
+		HashMap svc = (HashMap) map.get($svc);
+		if (svc == null) {
+			map.put($svc, new HashMap());
+			svc = (HashMap) map.get($svc);
+		}
+		
+		UnitCounter uc = (UnitCounter) svc.get($tz);
+		if (uc == null) {
+			uc = new UnitCounter(UnitCounter.DATA_COUNTER);
+			svc.put($tz, uc);
+		}
+		uc.addBytes( $dur.getBytes() );
+end
+
+rule "R01.23 - Find which rate to use"
+	salience 85
+	when
+		Invoice ( $cycleDate : cycleStartDate )
+	
+		Account ( $carrierState : carrierState )
+	
+		ContractInfoSection( $coid : contractNumber,
+							 $rateplan : ratePlan )
+		
+		$groupMap : NamedHashMap(name == "R01.23-usage-grouping")		
+		
+		$ratesMap : NamedHashMap(name == "R01.23-contract-rates")
+	then
+			
+		HashMap map = (HashMap) $groupMap.get($coid); 
+		if (map != null) {
+			Iterator svcIt = map.keySet().iterator();
+			while (svcIt.hasNext()) {
+				String svcId = (String) svcIt.next();
+				HashMap tzMap = (HashMap) map.get(svcId); 
+				Iterator tzIt = tzMap.keySet().iterator();
+				while (tzIt.hasNext()) {
+					String tzId = (String) tzIt.next();
+					UnitCounter uc = (UnitCounter) tzMap.get(tzId);
+
+					CachedPricePlanRatesVO cachedVo = (CachedPricePlanRatesVO) alternatePricePlanCache.getFromCache(
+								CachedPricePlanRatesVO.createAlternateKey($rateplan, $carrierState, svcId, tzId) );
+					
+					if (cachedVo != null) {
+						PricePlanRatesVO finalVo = cachedVo.getPricePlanRates($cycleDate);
+						if (finalVo != null) {					
+							addToRatesMap($ratesMap, $coid, svcId, tzId, new Double(findRate(finalVo, uc.getUnits())));
+						}
+					}		
+				}
+			}  
+		}
+end
+
+
+
+
+rule "R01.23 - Validate each tariff"
+	salience 80
+	when
+		$ratesMap : NamedHashMap( name == "R01.23-contract-rates" )
+
+		Account ( $carrierCode : carrierCode )
+	
+		TIMUsageDetail( dataUsage == true,
+						$svc : svcId,
+					 	$tz : tariff,
+					 	$dur : roundedDuration,
+					 	$coid : contractNumber,
+					 	$totalAmount : totalAmount > 0,
+					 	$amountBeforePromotions : amountBeforePromotions > 0,
+					 	discountAmount < 0.01,
+					 	microCellDesc == null,
+					 	$channelId : channelId,
+					 	$rateplan : ratePlan,
+					 	$datetime : datetime )
+
+		eval ($totalAmount.doubleValue() == $amountBeforePromotions.doubleValue())
+	
+	then
+	
+		HashMap map = (HashMap) $ratesMap.get($coid);
+		boolean tariffFound = false; 
+		if (map != null) {
+			HashMap svc = (HashMap) map.get($svc);
+			if (svc != null) {
+				Double rate = (Double) svc.get($tz);
+				if (rate != null) {
+					tariffFound = true;
+					// calculate and validate
+					double calculatedAmount = rate.doubleValue() * $dur.getBytes();
+					double diff = Math.abs(calculatedAmount - $totalAmount.doubleValue());
+					
+					if (diff > 0.010001) {
+						consequenceBuilder.setRule("R01-23","Tarifação de Dados");
+						consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+						consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+						consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+						consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+						consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+					
+						TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+						c.setDescription("Valor cobrado neste evento não coincide com o calculado.");
+						c.addAttribute("Contrato", $coid);
+						c.addAttribute("Número do Acesso", $channelId);
+						c.addAttribute("Plano",  $rateplan);
+						c.addAttribute("Data",  $datetime);
+						c.addAttribute("Volume utilizado", $dur);
+						c.addDoubleAttribute("Valor cobrado", $totalAmount.doubleValue(), "#.000000000000");
+						c.addDoubleAttribute("Valor calculado", calculatedAmount, "#.000000000000");
+						c.addDoubleAttribute("Tarifa empregada", rate.doubleValue(), "#.000000000000");
+						
+						results.add(c);
+					}
+				}
+			}
+		}
+	
+		if (!tariffFound) {
+			// raise error due to lack of information
+			consequenceBuilder.setRule("R01-23","Tarifação de Dados");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+		
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription("Não existe valor de tarifa configurado para este serviço.");
+			c.addAttribute("Contrato", $coid);
+			c.addAttribute("Número do Acesso", $channelId);
+			c.addAttribute("Plano",  $rateplan);
+			c.addAttribute("Data",  $datetime);
+			c.addAttribute("Volume utilizado", $dur);
+			c.addDoubleAttribute("Valor cobrado", $totalAmount.doubleValue());
+			c.addNullAttribute("Valor calculado");
+			c.addNullAttribute("Tarifa empregada");
+			
+			results.add(c);
+		}
+	
+end
+
+
+
+function boolean isDataPackage(String _units) {
+	int index = _units.length()-1;
+	return "B".equalsIgnoreCase(_units.substring(index));
+}
+
+function double findRate(PricePlanRatesVO _vo, long _units) {
+	
+	if (_units < _vo.getEndRange1()) {
+		return _vo.getAmtRange1();
+	} else if (_units < _vo.getEndRange2()) {
+		return _vo.getAmtRange2();
+	} else if (_units < _vo.getEndRange3()) {
+		return _vo.getAmtRange3();
+	} else if (_units < _vo.getEndRange4()) {
+		return _vo.getAmtRange4();
+	} else if (_units < _vo.getEndRange5()) {
+		return _vo.getAmtRange5();
+	} 
+	return _vo.getAmtRangeMax();
+}
+	
+
+function void addToRatesMap(NamedHashMap _ratesMap, String _coid, String _svcId, String _tzId, Double _rateAmt) {
+
+	if (!_ratesMap.containsKey(_coid)) {
+		_ratesMap.put(_coid, new HashMap());
+	}
+	
+	HashMap svcs = (HashMap) _ratesMap.get(_coid);
+	if (!svcs.containsKey(_svcId)) {
+		svcs.put(_svcId, new HashMap());
+	}
+	HashMap tzs = (HashMap) svcs.get(_svcId);
+	// override any old rates
+	tzs.put(_tzId, _rateAmt);
+	
+}

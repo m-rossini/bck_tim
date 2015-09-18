@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<project name="auster-invoice" default="run">
+
+    <property environment="env"/>
+
+    <target name="run">
+
+    <path id="run.classpath">
+        <fileset dir="${basedir}/lib" includes="*"/>
+        <pathelement location="${basedir}/conf"/>
+     </path>
+
+     <java classname="br.com.auster.minerva.Bootstrap"
+           fork="yes"
+           output="${env.BCK_BASEDIR}/log/report.out"
+           error="${env.BCK_BASEDIR}/log/report.err"
+           dir="${basedir}">
+
+        <sysproperty key="log4j.configuration" value="log4j.xml"/>
+ 	    <sysproperty key="jdbc.drivers"
+			         value="org.apache.commons.dbcp.PoolingDriver:oracle.jdbc.driver.OracleDriver"/>
+        <sysproperty key="java.endorsed.dirs" value="${basedir}/lib/endorsed"/>
+		<sysproperty key="file.encoding" value="Cp1252"/>
+
+		<arg line="${cmdline.args}"/>
+     	<arg line="-c ${basedir}/conf/configuration.xml"/>
+
+        <classpath>
+           <path refid="run.classpath"/>
+        </classpath>
+     </java>
+    </target>
+
+</project>

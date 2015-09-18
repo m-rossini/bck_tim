@@ -1,0 +1,129 @@
+#created on: 23/10/2007
+package br.com.auster.tim.billchekout
+
+#list any import classes here.
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.UsagePromotionDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.billcheckout.param.MpufftabVO;
+import br.com.auster.tim.billcheckout.param.MpufftabListVO;
+import br.com.auster.om.util.UnitCounter;
+import br.com.auster.common.lang.NamedDouble;
+import java.util.Iterator;
+import java.util.List;
+import java.lang.Double;
+
+#declare any global variables here
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.tim.billcheckout.param.MpufftabListCache mpufftabListCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+rule "Regra 19.3 - Asserting the promotions limits"
+
+	salience 99
+
+	when
+
+		$cif : ContractInfoSection ( $contractNumber : contractNumber )
+
+	then
+
+		MpufftabListVO mpufftabListVO = (MpufftabListVO) mpufftabListCache.getFromCache(MpufftabListVO.createAlternateKey($contractNumber));
+
+		if(mpufftabListVO != null) {
+			List mpufftabList = mpufftabListVO.getMpufftabVOList();
+
+			for (Iterator iter = mpufftabList.iterator(); iter.hasNext();) {
+				MpufftabVO mpufftab = (MpufftabVO) iter.next();
+				if ( mpufftab.getLimitedFlag() != null && mpufftab.getLimitedFlag().equalsIgnoreCase("Y") ) {
+					// KEY is 19.3<CONTRACT>|<PROM.CODE>|<PROM.DESCRIPTION>|<USERLIMIT>
+					assert(new NamedDouble("19.3" + mpufftab.getContractNumber() + "|" + mpufftab.getPromotionCode() + "|" + mpufftab.getDescription() + "|" + mpufftab.getUserLimit(), mpufftab.getUserLimit()));
+				}
+			}
+		}
+
+end
+
+
+rule "Regra 19.3 - Accumulating the calls duration"
+	salience 90
+	when
+
+		TIMUsageDetail ( $flags : guidingFlags -> ( !$flags.isExpired() && !$flags.isLate() ),
+					     $microCellDesc : microCellDesc -> ($microCellDesc!= null),
+						 voiceUsage == true,
+						 amountBeforePromotions > 0,
+						 discountAmount > 0,
+						 $roundedDuration : roundedDuration,
+						 $contractNumber : contractNumber
+					   )
+
+	  	$accTime : NamedDouble ( $name : name -> ($name.startsWith("19.3" + $contractNumber + "|" + $microCellDesc)) )
+
+	then
+
+	  	$accTime.subtractFrom($roundedDuration.getSeconds());
+
+end
+
+
+rule "Regra 19.3 - Comparing the limits to the calls duration sum"
+
+	salience 80
+
+	when
+
+		$account : Account( $carrierCode : carrierCode,
+							$carrierState : carrierState
+		 		  		  )
+
+		$cif : ContractInfoSection ( $contractNumber : contractNumber,
+									 $accessNbr : accessNbr
+								   )
+
+	    $accTime : NamedDouble ( $promotionDescAndUserLimit : name -> ($promotionDescAndUserLimit.startsWith("19.3" + $contractNumber)) )
+
+	then
+
+		if ( $accTime.getValue() < 0 ) {
+			// KEY is 19.3<CONTRACT>|<PROM.CODE>|<PROM.DESCRIPTION>|<USERLIMIT>
+			//get the promotion desc and user limit
+			$promotionDescAndUserLimit = $promotionDescAndUserLimit.substring($promotionDescAndUserLimit.indexOf('|') + 1);
+			$promotionDescAndUserLimit = $promotionDescAndUserLimit.substring($promotionDescAndUserLimit.indexOf('|') + 1);
+			//get only the promotion desc
+			String promotionDesc = $promotionDescAndUserLimit.substring(0, $promotionDescAndUserLimit.indexOf('|') );
+			//get the user limit
+			Double userLimit = new Double($promotionDescAndUserLimit.substring($promotionDescAndUserLimit.indexOf('|') + 1));
+
+			consequenceBuilder.setRule("R19-3","Limite Promoção não concedido");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+			c.setDescription("Limite configurado para promoção foi ultrapassado");
+			c.addAttribute("Número do Contrato", $contractNumber);
+			c.addAttribute("Número do Acesso", $accessNbr);
+			c.addAttribute("Descrição da Promoção", promotionDesc);
+			c.addAttribute("Duração limite configurada", userLimit);
+			c.addDoubleAttribute("Duração recebida em benefício", userLimit.doubleValue() + Math.abs($accTime.getValue()));
+
+			results.add(c);
+
+		}
+
+end

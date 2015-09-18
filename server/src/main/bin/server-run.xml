@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<project name="auster-billcheckout" default="server.run">
+
+    <property environment="env"/>
+
+    <target name="server.run">
+
+    <path id="run.classpath">
+       <fileset dir="${basedir}/lib" includes="*"/>
+       <pathelement location="${basedir}/conf"/>
+     </path>
+
+     <java classname="br.com.auster.tim.billcheckout.Bootstrap"
+           fork="yes"
+           output="${env.BCK_BASEDIR}/log/server.out"
+           error="${env.BCK_BASEDIR}/log/server.err"
+           maxmemory="${env.BCK_BASEMEM}"
+           dir="${basedir}">
+
+     	<jvmarg value="-d64"/>
+        <jvmarg value="-server"/>
+        <jvmarg value="-XX:+UseParallelGC"/>
+     	<jvmarg value="-XX:NewRatio=1"/>
+        <jvmarg value="-XX:MaxPermSize=128m"/>
+        <jvmarg value="-Xms${env.BCK_BASEMEM}"/>
+
+        <sysproperty key="app.name"
+                     value="BCKServer"/>
+        <sysproperty key="java.security.policy"
+                     value="etc/security.policy"/>
+        <sysproperty key="java.endorsed.dirs"
+                     value="${basedir}/lib/endorsed"/>
+        <sysproperty key="jdbc.drivers"
+	             value="org.apache.commons.dbcp.PoolingDriver:oracle.jdbc.driver.OracleDriver"/>
+        <sysproperty key="br.com.auster.billcheckout.rules.duplicity.basedir"
+                     value="${env.BCK_LOADEROUTPUTDIR}/usage-history"/>
+		<sysproperty key="user.timezone"
+			         value="GMT-3"/>
+		<sysproperty key="cglib.disabled"
+			         value="true"/>
+		<sysproperty key="tim.billcheckout.xstream.basedir"
+			         value="${env.BCK_LOADEROUTPUTDIR}/credcorp"/>
+		<sysproperty key="tim.billcheckout.xstream.filename"
+			         value="credcorp.xml.gz"/>
+		<sysproperty key="persist.basedir"
+			         value="${basedir}/resume"/>
+
+
+        <arg line="-p //localhost:2004/billcheckout"/>
+        <arg value="-x"/>
+        <arg file="conf/billcheckout.xml"/>
+        <arg value="-b"/>
+        <arg value="default"/>
+        <arg value="-a"/>
+        <arg value="{{bgh={{filenames=nofiles}}}}"/>
+	    <arg line="-s false"/>
+        <classpath>
+           <path refid="run.classpath"/>
+        </classpath>
+     </java>
+
+    </target>
+
+</project>

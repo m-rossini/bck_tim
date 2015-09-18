@@ -1,0 +1,273 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.om.util.ParserUtils;
+import br.com.auster.om.util.UnitCounter;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.ContractTotalsDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.ServiceReceiptDetail;
+import br.com.auster.tim.billcheckout.util.XStreamLoader;
+import br.com.auster.tim.billcheckout.param.PlansVO;
+import br.com.auster.common.lang.NamedHashMap;
+
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.tim.billcheckout.crashprogram.CostCenterVO;
+import br.com.auster.tim.billcheckout.tariff.CrashProgramRatesVO;
+import br.com.auster.tim.billcheckout.tariff.CachedCrashProgramRatesVO;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+global br.com.auster.tim.billcheckout.param.PlansCache plansCache;
+global br.com.auster.tim.billcheckout.crashprogram.CostCenterCache costCenterCache;
+global br.com.auster.tim.billcheckout.tariff.CrashProgramRatesCache cashProgramRatesCache;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+
+
+//
+// Summ all TMCodes 
+//
+
+rule "Regra 01.40 - Building named hash map"
+	salience 90
+	when
+	
+		Account( $custCode : accountNumber )
+		
+		not ( NamedHashMap( $name : name -> ($name.equals("R01.40-validation-" + $custCode)) ) )
+	then
+		// [rateplan] [sum($)]
+		assert( new NamedHashMap("R01.40-validation-" + $custCode) );
+end
+
+
+
+rule "Regra 01.40 - Grouping TMCodes"
+	salience 80
+	when
+		Account( $custCode : accountNumber )
+
+		ContractTotalsDetail ( tag == "60000000",
+							   $coid : contractNumber,
+							   $chargedAmount : totalAmount )
+							   
+		ContractInfoSection ( contractNumber == $coid,
+							  $rateplan : ratePlan )
+							  
+		$nhm : NamedHashMap( $name : name -> ($name.equals("R01.40-validation-" + $custCode)) )
+	then
+		if (!$nhm.containsKey($rateplan)) {
+			$nhm.put($rateplan, new Double($chargedAmount.doubleValue()));
+		} else {
+			Double dbl = (Double) $nhm.get($rateplan);
+			dbl = new Double(dbl.doubleValue() + $chargedAmount.doubleValue());
+			$nhm.put($rateplan, dbl);
+		}
+end
+
+
+//
+// Check CSGCodes saved
+//
+
+rule "Regra R01.40 - Loading Crash Program Information"
+	salience 90
+	when
+
+		Account ( $custCode : accountNumber )
+
+	then
+
+	String rootCustCode = $custCode;
+	int idx = $custCode.indexOf(".", $custCode.indexOf(".")+1);
+	if (idx > 0) {
+		rootCustCode = new String($custCode.substring(0, idx));
+	}
+
+	// load all credcorp info
+	XStreamLoader loader = new XStreamLoader();
+	List nodes = loader.loadXStreamInfo(rootCustCode, true, NamedHashMap.class);
+	if (nodes != null) {
+		for (Iterator it = nodes.iterator(); it.hasNext(); ) {
+			// asserting namedDouble for child accounts
+			NamedHashMap d = (NamedHashMap) it.next();
+			assert(d);
+		}
+	}
+	// create sum named doubles
+	// [CSGCODE][UNIT-COUNTER]
+	assert(new NamedHashMap("R01.40-SUM-CSGCODES"));
+	// [TMCODE] [CSGCODE*]  *- last CSGCODE found for this TMCODE
+	assert(new NamedHashMap("R01.40-SUM-TMCODES"));
+end
+
+
+rule "Regra R01.40 - Grouping Amounts Crash Program Information"
+	salience 80
+	when
+		$base : NamedHashMap( name == "R01.40-SUM-CSGCODES")
+		
+		$unit : NamedHashMap( $name : name -> ($name.startsWith("R01.40-collection-")) )
+	then
+
+	Iterator it = $unit.keySet().iterator();
+	while (it.hasNext()) {
+		String csgCode = (String)it.next();
+		if (csgCode.indexOf("tmcodes") > 0) { continue; }
+		UnitCounter uc = (UnitCounter) $unit.get(csgCode);
+		Long sum = new Long( (long)uc.getMinutes());
+		if ($base.containsKey(csgCode)) {
+			Long l = (Long)$base.get(csgCode);
+			sum = new Long(l.longValue() + sum.longValue());
+		}
+		$base.put(csgCode, sum);
+	} 
+end
+
+rule "Regra R01.40 - Grouping TMCodes Crash Program Information"
+	salience 80
+	when
+		$base : NamedHashMap( name == "R01.40-SUM-TMCODES")
+		
+		$unit : NamedHashMap( $name : name -> ($name.startsWith("R01.40-collection-")) )
+	then
+
+	Iterator it = $unit.keySet().iterator();
+	while (it.hasNext()) {
+		String csgCode = (String)it.next();
+		if (csgCode.indexOf("tmcodes") <= 0) { continue; }
+		LinkedList tmcodes = (LinkedList) $unit.get(csgCode);
+		Iterator it2 = tmcodes.iterator();
+		while (it2.hasNext()) {
+			String tmcode = (String)it2.next();
+			$base.put(tmcode, new String(csgCode.substring(0, csgCode.indexOf(".tmcodes"))));
+		}
+	} 
+	
+end
+
+
+//
+// Now validating all 12100000 tags
+//
+
+rule "Regra R01.40 - Calculating final values"
+	salience 70
+	when
+		ServiceReceiptDetail (subscription == true, 
+							  $rateplan : serviceId,
+							  $proRateFactor : proRateFactor, 
+							  $chargedAmount : totalAmount)
+		
+		Account( $carrierState : carrierState,
+				 $custCode : accountNumber,
+				 $carrierCode : carrierCode, 
+				 $costCode : customerServiceArea )
+
+		$csgcodes : NamedHashMap( name == "R01.40-SUM-CSGCODES" )
+		
+		$tmcodes : NamedHashMap( name == "R01.40-SUM-TMCODES" )
+		
+		$sumcharges : NamedHashMap( $name : name -> ($name.equals("R01.40-validation-" + $custCode)) )
+	then
+	
+		Double netAmount = (Double) $sumcharges.get($rateplan);
+		PlansVO planVo = (PlansVO) plansCache.getFromCache( PlansVO.createAlternateKey($rateplan, $carrierState) );
+		if ((planVo != null) && (netAmount != null)) {
+			String csgCode = (String) $tmcodes.get( String.valueOf(planVo.getTmCode()) );
+			if (csgCode != null) {
+				Long sum = (Long) $csgcodes.get( csgCode );
+				if (sum != null) {
+				
+					// get costid
+					CostCenterVO costId = (CostCenterVO) costCenterCache.getFromCache( CostCenterVO.createKey($costCode) );
+					if (costId != null) {
+					
+						// find range for sum.getUnits()
+						CachedCrashProgramRatesVO rangeVo = (CachedCrashProgramRatesVO)
+														cashProgramRatesCache.getFromCache( CachedCrashProgramRatesVO.createKey( costId.getCostCenterId(), csgCode ) );
+						if ((rangeVo == null) || (rangeVo.getRate(sum.longValue()) == null)) {
+	
+							consequenceBuilder.setRule("R01-40","Cobrança de Crash Program");
+							consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+							consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+							consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+							consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+							consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+					
+							TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+							c.setDescription("Não existe configuração de desvio para este plano.");
+					
+					        c.addAttribute("Plano", $rateplan);
+					        c.addAttribute("Centro de Custo", $costCode);
+					        c.addAttribute("Grupo de Serviços", csgCode);
+					        c.addDoubleAttribute("Total de Minutos Contratados", sum.longValue());
+					        c.addNullAttribute("Preço por Minuto");
+					        c.addNullAttribute("Desvio Calculado");
+					        c.addNullAttribute("Total Calculado");
+					        c.addDoubleAttribute("Total Cobrado", $chargedAmount.doubleValue());
+					        c.addDoubleAttribute("Fator de Pro-rata", $proRateFactor.doubleValue());
+					
+					        results.add(c);
+							
+						} else {
+						
+							CrashProgramRatesVO ppmVO = rangeVo.getRate(sum.longValue());
+							// calculate values
+							double diff = ppmVO.getPPM() * sum.longValue(); 
+							double grossAmount = (netAmount.doubleValue() * $proRateFactor.doubleValue()) - diff;
+							
+							boolean isIncorrect = false;
+							double result = Math.abs( Math.abs(grossAmount) - Math.abs($chargedAmount.doubleValue()) );
+							if (result > 0.010001) {
+								isIncorrect = true;
+							} else if (result > 0.007) {
+							 	isIncorrect = (! ParserUtils.asDoubleString(Math.abs(grossAmount)).equals(ParserUtils.asDoubleString(Math.abs($chargedAmount.doubleValue()))) );
+							}
+							
+							if (isIncorrect) {
+	
+								consequenceBuilder.setRule("R01-40","Cobrança de Crash Program");
+								consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+								consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+								consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+								consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+								consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+						
+								TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+								c.setDescription("Desconto aplicado à assinatura diverge do calculado.");
+						
+						        c.addAttribute("Plano", $rateplan);
+						        c.addAttribute("Centro de Custo", $costCode);
+						        c.addAttribute("Grupo de Serviços", csgCode);
+						        c.addDoubleAttribute("Total de Minutos Contratados", sum.longValue());
+						        c.addDoubleAttribute("Preço por Minuto", ppmVO.getPPM(), "#.0000");
+						        c.addDoubleAttribute("Desvio Calculado", diff);
+						        c.addDoubleAttribute("Total Calculado", grossAmount);
+						        c.addDoubleAttribute("Total Cobrado", $chargedAmount.doubleValue());
+						        c.addDoubleAttribute("Fator de Pro-rata", $proRateFactor.doubleValue());
+						
+					        	results.add(c);
+							}
+						}
+					}
+				} 
+			}
+		}	
+end

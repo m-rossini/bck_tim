@@ -1,0 +1,13 @@
+LOAD DATA
+BADFILE 'log/tariffzone.bad'
+DISCARDFILE 'log/tariffzone.dsc'
+APPEND
+INTO TABLE QLF_TARIFF_ZONE
+FIELDS TERMINATED BY ","
+( 
+ 	OBJID 				EXPRESSION "seq1.nextval", 
+	ZONE_CODE			position(1:2048) "loader.word(:zone_code,1,';')",
+	DESCRIPTION 	position(1:1) "loader.word(:zone_code,2,';')",
+	SHORT_DESC 		position(1:1) "loader.word(:zone_code,3,';')",
+	TARIFF_TYPE		position(1:1) "loader.word(:zone_code,4,';')"
+)

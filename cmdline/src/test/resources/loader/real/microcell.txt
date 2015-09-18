@@ -1,0 +1,3 @@
+Plano TIM BRASIL 120-250-GSP;PTP07;Microcélula1;;3;0,07;01-1-2001
+Plano TIM BRASIL 120-250-GSP;PLD07;Microcélula2;;3;0,07;01-1-2001
+Plano Nosso Modo-G09;PALD;Microcélula3;;1;0,00666667;01-1-2001

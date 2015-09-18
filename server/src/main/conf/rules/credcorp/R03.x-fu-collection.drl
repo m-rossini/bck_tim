@@ -1,0 +1,125 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.FreeUnitsReceiptDetail;
+import br.com.auster.tim.om.invoice.UsageFUDetail;
+import br.com.auster.common.lang.NamedHashMap;
+import br.com.auster.om.util.UnitCounter;
+import br.com.auster.common.rules.GlobalForLog;
+import br.com.auster.tim.billcheckout.util.CycleDates;
+import br.com.auster.tim.billcheckout.util.FreeUnitAccumulator;
+import java.util.Date;
+import java.util.HashMap;
+
+global java.util.List results;
+
+
+
+rule "Regra R03.x - Building FU Accumulators"
+	salience 90
+	when
+
+		$fuDetail : UsageFUDetail ( $accountID : accountID,
+						            $shortDesc : packageShortDescription,
+						            $fullDesc : packageLongDescription,
+						            $uc : reductionVolume,
+						            $callDateTime : usageDatetime
+				                  )
+
+		Invoice ( $endDate : cycleEndDate,
+				  $startDate : cycleStartDate
+			    )
+
+		Account ( $custCode : accountNumber )
+
+		not ( FreeUnitAccumulator ( accountId == $accountID,
+									$periodStart : periodStart -> ($periodStart.equals(CycleDates.calculateStartCycle($callDateTime, $startDate)))
+								  )
+		    )
+
+
+	then
+		Date startDate = CycleDates.calculateStartCycle($callDateTime, $startDate);
+		FreeUnitAccumulator fuAcc = new FreeUnitAccumulator($accountID, startDate, $custCode, CycleDates.calculateEndCycle(startDate));
+		fuAcc.setShortDescription($shortDesc);
+		fuAcc.setFullDescription($fullDesc);
+		fuAcc.setTypeOfUsage($uc.getType());
+		GlobalForLog.log("DEBUG", "Built FUAcc for accId=" + $accountID + "/startDate="+ startDate);
+		assert(fuAcc);
+		// next map is used to identify if the fuAccountID was used across different accounts
+		NamedHashMap mapInfo = new NamedHashMap(fuAcc.toString());
+		assert(mapInfo);
+end
+
+
+
+rule "Regra R03.x - Accumulating reduction volumes"
+	salience 80
+	when
+
+		$fuDetail : UsageFUDetail ( $accountID : accountID,
+						$volume : reductionVolume,
+						$usageVolume : usageRoundedDuration,
+						$contractNumber : usageChannelId,
+						$callDateTime : usageDatetime
+					   )
+
+		Invoice ( $startDate : cycleStartDate )
+
+		$fuInfo : FreeUnitAccumulator ( accountId == $accountID,
+										$typeOfUsage : typeOfUsage,
+							            $periodStart : periodStart -> ($periodStart.equals(CycleDates.calculateStartCycle($callDateTime, $startDate)))
+							          )
+
+		$mapInfo : NamedHashMap ( $name : name -> ($name.equals($fuInfo.toString()))
+		                         )
+
+	then
+		// saving contract ID into $map
+		$mapInfo.put($contractNumber, $contractNumber);
+		// rest of rule
+		if (UnitCounter.UNIT_COUNTER.equals($typeOfUsage)) {
+			UnitCounter uc = new UnitCounter(UnitCounter.UNIT_COUNTER);
+            uc.setUnits(1);
+			$fuInfo.addTotalVolume(uc);
+		} else if (UnitCounter.DATA_COUNTER.equals($typeOfUsage)) {
+			$fuInfo.addTotalVolume($usageVolume);
+		} else {
+			$fuInfo.addTotalVolume($volume);
+		}
+		GlobalForLog.log("DEBUG", "Volume for accountID '" + $accountID + "' at period stared at " + $startDate + " is now " + $fuInfo.getTotalVolume() + "units");
+
+		// checking minDatetime
+		if (($fuInfo.getMinDatetime() == null) || ($fuInfo.getMinDatetime().after($callDateTime))) {
+			GlobalForLog.log("DEBUG", "minDatetime for accountID '" + $accountID + "' at period stared at " + $startDate + " is now " + $callDateTime);
+			$fuInfo.setMinDatetime($callDateTime);
+		}
+
+		// checking maxDatetime
+		if (($fuInfo.getMaxDatetime() == null) || ($fuInfo.getMaxDatetime().before($callDateTime))) {
+			GlobalForLog.log("DEBUG", "maxDatetime for accountID '" + $accountID + "' at period stared at " + $startDate + " is now " + $callDateTime);
+			$fuInfo.setMaxDatetime($callDateTime);
+		}
+end
+
+
+
+rule "Regra R03.x - Saving FU accumulators"
+	salience 70
+	when
+		$fuInfo : FreeUnitAccumulator ( $accountID : accountId )
+
+		$mapInfo : NamedHashMap ( $name : name -> ($name.equals($fuInfo.toString()))
+		                         )
+	then
+		// defining if package is shared across contracts
+		if ($mapInfo.size() == 1) {
+			$fuInfo.setContractId( (String) $mapInfo.values().iterator().next() );
+		} else {
+			$fuInfo.setContractId( null );
+		}
+		//saving fu hash map into memory
+		results.add($fuInfo);
+end

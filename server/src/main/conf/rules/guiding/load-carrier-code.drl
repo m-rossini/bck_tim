@@ -1,0 +1,59 @@
+#created on: 12/02/2008
+package br.com.auster.tim.billchekout;
+
+#list any import classes here.
+import br.com.auster.om.invoice.Receipt;
+
+
+global java.util.List results;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+
+
+rule "Sets the carrier code"
+	salience 100
+
+	when
+
+		$rcpt : Receipt()
+
+	then
+
+		$rcpt.setCarrierCode(getCarrierCode($rcpt.getCarrierName()));
+
+end
+
+
+function String getCarrierCode(String carrierName) {
+
+	if (carrierName.toUpperCase().startsWith("EMBRATEL")) {
+		return "21";
+	} else if (carrierName.toUpperCase().startsWith("INTELIG")) {
+		return "23";
+	} else if (carrierName.toUpperCase().startsWith("TIM ")) {
+		return "41";
+	} else if (carrierName.toUpperCase().startsWith("TELEMAR")) {
+		return "31";
+	} else if (carrierName.toUpperCase().startsWith("TNL PCS")) {
+		return "97";
+	} else if (carrierName.toUpperCase().indexOf("TELESP") >= 0) {
+		return "15";
+	} else if (carrierName.toUpperCase().startsWith("CIA DE TELECOM")) {
+		return "12";
+	} else if (carrierName.toUpperCase().startsWith("BRASIL TELECOM")) {
+		return "14";
+	} else if (carrierName.toUpperCase().startsWith("GVT")) {
+		return "25";
+	} else if (carrierName.toUpperCase().startsWith("MAXITEL")) {
+		return "41";
+	} else if (carrierName.toUpperCase().startsWith("OI")) {
+		return "32";
+	} else if (carrierName.toUpperCase().startsWith("CLARO")) {
+		return "36";
+	} else if (carrierName.toUpperCase().startsWith("CTBC")) {
+		return "12";
+	}
+
+	return "00";
+
+}

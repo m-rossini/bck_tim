@@ -1,0 +1,37 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.om.invoice.BarCode;
+import br.com.auster.om.invoice.Identity;
+
+import br.com.auster.common.util.CommonsServicesBarCode;
+import br.com.auster.tim.billcheckout.util.TIMBarCode;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+rule "Regra DEBUG"
+	salience 0
+	when
+		Account( $accNo : accountNumber, $carrierCode : carrierCode)	
+		Invoice ( $amt : totalAmount > 0 )
+		$barcode : BarCode( $inv : invoice)
+    then
+    
+    double diff = Math.abs(CommonsServicesBarCode.getValueAsDouble($barcode.getOCRRightLine())) - Math.abs($amt.doubleValue());
+    System.out.println("In barcode " + CommonsServicesBarCode.getValueAsDouble($barcode.getOCRRightLine()));
+    System.out.println("In file " + $amt.doubleValue());
+    
+    System.out.println("Amount diff is " + diff);
+end

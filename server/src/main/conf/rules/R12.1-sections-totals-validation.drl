@@ -1,0 +1,618 @@
+package br.com.auster.tim.billchekout;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Iterator;
+import java.lang.Math;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.om.invoice.Section;
+import br.com.auster.om.invoice.Receipt;
+import br.com.auster.om.invoice.ReceiptDetail;
+
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.om.invoice.ContractInfoSubtotalDetail;
+import br.com.auster.tim.om.invoice.ContractTotalsDetail;
+
+import br.com.auster.tim.om.invoice.TIMReceiptDetail;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+import br.com.auster.tim.om.invoice.ServiceReceiptDetail;
+
+import br.com.auster.common.lang.NamedHashMap;
+import br.com.auster.common.lang.NamedDouble;
+
+global java.util.List results;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+
+function void SummTotals(NamedHashMap namedmap, Map contracts) {
+	for (Iterator itr=namedmap.entrySet().iterator();itr.hasNext();) {
+		Map.Entry entry = (Map.Entry) itr.next();
+
+		double sumValue = 0;
+		if (contracts.containsKey(entry.getKey())) {
+			sumValue= ((Double) contracts.get(entry.getKey())).doubleValue();
+		}
+		sumValue += ((Double) entry.getValue()).doubleValue();
+		contracts.put(entry.getKey(), new Double(sumValue));
+	}
+}
+
+function double SummContractTotal(NamedHashMap namedmap) {
+	double result = 0;
+	for (Iterator itr=namedmap.values().iterator();itr.hasNext();) {
+		result += ((Double) itr.next()).doubleValue();
+	}
+	return result;
+}
+
+
+/**
+ * THIS SECTION VALIDATES RULE R12.1
+ */
+rule "Regra 12-1 INIT"
+	salience 45
+	when
+		Invoice()
+		not NamedDouble( name=="InvoiceTotals" )
+	then
+		assert( new NamedDouble("InvoiceTotals"));
+end
+
+
+
+/**
+ * This rule 12-1A, validates the sum of the usages against it usage group
+ */
+rule "Regra 12-1A VALIDATION"
+	salience 40
+	when
+		$group : ContractUsageGroupSubsection(
+		 $carrierCode : carrierCode ,
+		 $qty : quantity ,
+		 $secname : sectionName,
+		 $secamt : totalAmount,
+		 // this flag indicates if this usage group section contains usage details. Ticket #100
+		 usage == true
+		 )
+
+		ContractInfoSection(
+			$infoamt : totalAmount,
+			$cno : contractNumber,
+			$accNumber : accessNbr,
+			subSections contains $group
+			)
+
+		Account($accNo : accountNumber )
+
+		$doubleSum : NamedDouble( name == "InvoiceTotals")
+	then
+		long counter=0;
+		double totalizer=0;
+		for (Iterator itr=$group.getDetails().iterator();itr.hasNext();) {
+			TIMUsageDetail usage = (TIMUsageDetail) itr.next();
+			totalizer += usage.getTotalAmount();
+			counter++;
+		}
+		int errorLevel=0;
+		$doubleSum.addTo($secamt.doubleValue());
+		double diff = Math.abs(totalizer - $secamt.doubleValue());
+		if (diff  > 0.001) 	{
+		  errorLevel = 1;
+		}
+		if (counter != $qty.longValue()) {
+		  errorLevel += 2;
+		}
+		if (errorLevel != 0) {
+			consequenceBuilder.setRule("R12-1","Totais dentro da seções");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+			switch (errorLevel) {
+	  			case 1: {
+					c.setDescription("Valor da Seção diverge do cálculo dos valores dos elementos dentro da mesma.");
+					break;
+		  		}
+				case 2: {
+					c.setDescription("Quantidade de elementos da Seção diverge do cálculo da quantidade de elementos dentro da mesma.");
+					break;
+				}
+				case 3: {
+					c.setDescription("Valor e Quantidade da Seção divergem do cálculo dos elementos dentro da mesma.");
+					break;
+				}
+	    	}
+
+		    c.addAttribute("Número do Acesso", $accNumber);
+		    c.addAttribute("Número do Contrato", $cno);
+		    c.addAttribute("Nome da Seção", $secname);
+		    c.addAttribute("Valor dos Eventos", $secamt);
+	    	c.addDoubleAttribute("Cálculo do Valor dos Eventos", totalizer);
+		    c.addAttribute("Quantidade de Eventos", $qty);
+	        c.addLongAttribute("Cálculo da Quantidade de Eventos", counter);
+			// Identifies rounding problems
+	        if (diff <= 0.01) {
+				c.addAttribute("Arredondamento", "Possível erro de arredondamento.");
+	        } else {
+				c.addNullAttribute("Arredondamento");
+	        }
+
+		    results.add(c);
+		}
+end
+
+/**
+ * Since we removed non-detailed sections from 12-1A, we now need a rule to sum those
+ *   sections for validating rule R12.5.
+ * Ticket #100
+ */
+rule "Regra 12-1B VALIDATION"
+	salience 40
+	when
+		$group : ContractUsageGroupSubsection(
+		 $carrierCode : carrierCode ,
+		 $qty : quantity ,
+		 $secname : sectionName,
+		 $secamt : totalAmount,
+		 // this flag indicates if this usage group section contains usage details. Ticket #100
+		 usage == false
+		 )
+
+		ContractInfoSection(
+			$infoamt : totalAmount,
+			$cno : contractNumber,
+			$accNumber : accessNbr,
+			subSections contains $group
+			)
+
+		Account($accNo : accountNumber )
+
+		$doubleSum : NamedDouble( name == "InvoiceTotals")
+	then
+		$doubleSum.addTo($secamt.doubleValue());
+end
+
+
+
+/**
+ * THIS SECTION VALIDATES RULE R12.6
+ */
+
+/**
+ * First the sum of group itens for a given receipt detail (Only for fromBGH flag is true)
+ * Second, the sum of receipt details against a receipt.
+ */
+rule "Regra 12-6 VALIDATION"
+	salience 30
+	when
+		Account(
+			$carrierCode : carrierCode,
+			$accno : accountNumber )
+
+		$nf : Receipt(
+			$nbr : receiptNbr,
+		    $nfcarrier : carrierCode ,
+			$nfamt : totalAmount
+			)
+	then
+		double totalizer=0;
+		double diff=0;
+		for (Iterator nfItr=$nf.getDetails().iterator();nfItr.hasNext();) {
+			TIMReceiptDetail recDetail = (TIMReceiptDetail) nfItr.next();
+			double groupSum=0;
+			for (Iterator grpItr=recDetail.getReceiptGroupItems().iterator();grpItr.hasNext();) {
+				ReceiptDetail group = (ReceiptDetail) grpItr.next();
+				groupSum += group.getTotalAmount();
+			}
+			if (recDetail.isFromBGH()) {
+				totalizer += recDetail.getTotalAmount();
+				diff = Math.abs(recDetail.getTotalAmount() - groupSum);
+				if (diff  > 0.001) {
+					consequenceBuilder.setRule("R12-6","Validação Total da NF");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("Valor dos itens agrupados na Nota Fiscal divergem do valor do item agrupador.");
+
+			        c.addDoubleAttribute("Valor da Nota Fiscal", recDetail.getTotalAmount());
+			        c.addDoubleAttribute("Valor do Cálculo", groupSum);
+			        c.addAttribute("Número da NF", $nbr);
+			        c.addAttribute("Operadora", $nfcarrier);
+			        c.addAttribute("Seção", recDetail.getCaption());
+			        if (diff <= 0.01) {
+						c.addAttribute("Arredondamento", "Possível erro de arredondamento.");
+			        } else {
+						c.addNullAttribute("Arredondamento");
+			        }
+
+			        results.add(c);
+				}
+			} else {
+				totalizer += groupSum;
+			}
+		}
+		diff = Math.abs(totalizer - $nfamt.doubleValue());
+		if (diff  > 0.001) {
+			consequenceBuilder.setRule("R12-6","Validação Total da NF");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription("Valor da Nota Fiscal diverge da soma do valor dos itens.");
+
+	        c.addAttribute("Valor da Nota Fiscal", $nfamt);
+	        c.addDoubleAttribute("Valor do Cálculo", totalizer);
+	        c.addAttribute("Número da NF", $nbr);
+	        c.addAttribute("Operadora", $nfcarrier);
+			c.addNullAttribute("Seção");
+	        if (diff <= 0.01) {
+				c.addAttribute("Arredondamento", "Possível erro de arredondamento.");
+	        } else {
+				c.addNullAttribute("Arredondamento");
+	        }
+
+	        results.add(c);
+		}
+end
+
+
+
+/**
+ * THIS SECTION VALIDATES RULE R12.4
+ */
+
+/**
+ * This rule validates the contract info amout against the sum of all ContractUsageGroupSubsection
+ */
+rule "Regra 12-4 VALIDATION"
+	salience 0
+	when
+		$info : ContractInfoSection(
+			$cno : contractNumber,
+			$accNumber : accessNbr
+			)
+
+		Account(
+			$carrierCode : carrierCode ,
+			$accno : accountNumber )
+	then
+		double  sectotal=0;
+		for (Iterator itr=$info.getSubSections().iterator();itr.hasNext();) {
+			ContractUsageGroupSubsection sub = (ContractUsageGroupSubsection) itr.next();
+			sectotal += sub.getTotalAmount();
+		}
+
+		double dettotal=0;
+		for(Iterator itr=$info.getDetails().iterator();itr.hasNext();) {
+			ContractInfoSubtotalDetail detail = (ContractInfoSubtotalDetail) itr.next();
+			dettotal += detail.getTotalAmount();
+		}
+		double diff = Math.abs(dettotal - sectotal);
+		if (diff  > 0.001) {
+            consequenceBuilder.setRule("R12-4","Total de Utilização do Contrato");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription("O somatório dos detalhes de uso diverge do total da seção.");
+
+		    c.addAttribute("Número do Acesso", $accNumber);
+		    c.addAttribute("Número do Contrato", $cno);
+	        c.addDoubleAttribute("Valor Total da Seção", sectotal);
+	        c.addDoubleAttribute("Valor Total dos Usos", dettotal);
+	        if (diff <= 0.01) {
+				c.addAttribute("Arredondamento", "Possível erro de arredondamento.");
+	        } else {
+				c.addNullAttribute("Arredondamento");
+	        }
+
+	        results.add(c);
+		}
+end
+
+
+/**
+ * THIS SECTION VALIDATES RULE R12.5
+ */
+
+/**
+ * Creates Structures to accumulate the Contract Totals
+ */
+rule "Regra 12-5 INIT"
+	salience 40
+	when
+		not NamedHashMap( name == "ContractSubscription")
+	then
+		assert(new NamedHashMap("ContractSubscription") );
+		assert(new NamedHashMap("ContractServices") );
+		assert(new NamedHashMap("ContractOCC") );
+		assert(new NamedHashMap("ContractDiscounts") );
+		assert(new NamedHashMap("ContractTotal") );
+		assert(new NamedHashMap("ContractNumbersAndAccess") );
+		assert(new NamedDouble("ChildAccounts") );
+end
+
+/**
+ * For each contract accumulates all subscriptions fees
+ */
+rule "Regra 12-5 CONTRACT SUBSCRIPTION ACCUMULATOR"
+	salience 35
+	when
+		$sec : Section(
+			caption=="ContractSubscription")
+
+		$det : ContractTotalsDetail(
+			$detamt : totalAmount ,
+			$cno : contractNumber,
+			section == $sec)
+
+		$hash : NamedHashMap( name == "ContractSubscription")
+	then
+		$hash.put($cno,$detamt);
+end
+
+/**
+ * For each contract accumulates all contract services fees
+ */
+rule "Regra 12-5 CONTRACT SERVICES ACCUMULATOR"
+	salience 35
+	when
+		$sec : Section(
+			caption=="ContractServices")
+
+		$det : ContractTotalsDetail(
+			$detamt : totalAmount ,
+			$cno : contractNumber,
+			section == $sec)
+
+		$hash : NamedHashMap( name == "ContractServices")
+	then
+		$hash.put($cno,$detamt);
+end
+
+/**
+ * For each contract accumulates all OCCs
+ */
+rule "Regra 12-5 CONTRACT OCC ACCUMULATOR"
+	salience 35
+	when
+		$sec : Section(
+			caption=="ContractOCC")
+
+		$det : ContractTotalsDetail(
+			$detamt : totalAmount ,
+			$cno : contractNumber,
+			section == $sec)
+
+		$hash : NamedHashMap( name == "ContractOCC")
+	then
+		$hash.put($cno,$detamt);
+end
+
+/**
+ * For each contract accumulates all Discounts
+ */
+rule "Regra 12-5 CONTRACT DISCOUNT ACCUMULATOR"
+	salience 35
+	when
+		$sec : Section(
+			caption=="ContractDiscounts")
+
+		$det : ContractTotalsDetail(
+			$detamt : totalAmount ,
+			$cno : contractNumber,
+			section == $sec)
+
+		$hash : NamedHashMap( name == "ContractDiscounts")
+	then
+		$hash.put($cno,$detamt);
+end
+
+rule "Regra 12-5 CONTRACT TOTALS ACCUMULATOR"
+	salience 35
+	when
+		$sec : Section(
+			caption=="ContractTotal")
+
+		$det : ContractTotalsDetail(
+			$detamt : totalAmount ,
+			$cno : contractNumber,
+			section == $sec)
+
+		$hash : NamedHashMap( name == "ContractTotal")
+	then
+		$hash.put($cno,$detamt);
+end
+
+
+rule "Regra 12-5 NF OCCs ACCUMULATOR"
+	salience 35
+	when
+		$doubleSum : NamedDouble( name == "InvoiceTotals")
+
+		GroupItemReceiptDetail( OCC == true,
+								$amount : totalAmount
+		                      )
+	then
+		$doubleSum.addTo($amount.doubleValue());
+end
+
+/**
+ * This accumulation is due to ticket #103
+ */
+rule "Regra 12-5 CHILD ACCOUNTs ACCUMULATOR"
+	salience 35
+	when
+	    Invoice ( documentType == "3" )
+
+		$doubleSum : NamedDouble( name == "ChildAccounts")
+
+		Section( sectionName == "IndividualNotaFiscal",
+		         $amount : totalAmount )
+	then
+		$doubleSum.addTo($amount.doubleValue());
+end
+
+rule "Regra 12-5 NF SERVICES ACCUMULATOR"
+	salience 35
+	when
+		$doubleSum : NamedDouble( name == "InvoiceTotals")
+
+		ServiceReceiptDetail( $amount : totalAmount )
+	then
+		$doubleSum.addTo($amount.doubleValue());
+end
+
+
+/**
+ * This next named map is used to display the access number and contract number, both, in consequences
+ *   of this rule.
+ * Ticket #101
+ */
+rule "Regra 12-5 CONTRACT AND ACCESS NUMBER RELATION"
+	salience 35
+	when
+		ContractInfoSection ( $cno : contractNumber,
+							  $accNumber : accessNbr
+							 )
+
+		$hash : NamedHashMap( name == "ContractNumbersAndAccess" )
+	then
+		$hash.put($cno, $accNumber);
+end
+
+/**
+ * Here we sum up all previous accumulate sections on a per contract basis
+ * Checks the sum against the contract totals section if not equals create a consequence
+ * Then sum up all contract total sections against the invoice.
+ * And checks the values....
+ */
+rule "Regra 12-5 VALIDATION"
+	salience 30
+	when
+		$acc : Account(
+			$carrierCode : carrierCode ,
+			$accno : accountNumber
+			)
+
+		$inv : Invoice (
+			account == $acc,
+			$invamt : totalAmount
+		)
+
+		$hashSub : NamedHashMap( name == "ContractSubscription")
+		$hashSer : NamedHashMap( name == "ContractServices")
+		$hashOcc : NamedHashMap( name == "ContractOCC")
+		$hashDis : NamedHashMap( name == "ContractDiscounts")
+		# not using for sum()
+		$hashTot : NamedHashMap( name == "ContractTotal")
+
+		$doubleSum : NamedDouble( name == "InvoiceTotals")
+		$childSum  : NamedDouble( name == "ChildAccounts")
+
+		$contractAccessNumbers : NamedHashMap( name == "ContractNumbersAndAccess" )
+	then
+		double total=0;
+		double diff=0;
+		HashMap contracts = new HashMap();
+
+		SummTotals($hashSub,contracts);
+		SummTotals($hashSer,contracts);
+		SummTotals($hashOcc,contracts);
+		SummTotals($hashDis,contracts);
+
+		for (Iterator itr=$hashTot.entrySet().iterator();itr.hasNext();) {
+			Map.Entry entry = (Map.Entry) itr.next();
+
+			String cno = (String) entry.getKey();
+			if (contracts.containsKey(cno)) {
+				double compareSum = ((Double)contracts.get(cno)).doubleValue();
+				double compareTot = ((Double)entry.getValue()).doubleValue();
+				diff  = Math.abs(compareSum - compareTot);
+				if (diff > 0.001) {
+					consequenceBuilder.setRule("R12-5","Validação Total da Fatura");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("Seção de sumário de contrato diverge em valores da soma de serviços.");
+
+				   	c.addAttribute("Número do Acesso", $contractAccessNumbers.get(cno));
+		            c.addAttribute("Número do Contrato", cno);
+			        c.addDoubleAttribute("Valor Calculado", compareSum);
+			        c.addDoubleAttribute("Valor Apresentado", compareTot);
+			        c.addNullAttribute("Valor Descontos no Total");
+			        if (diff <= 0.01) {
+						c.addAttribute("Arredondamento", "Possível erro de arredondamento.");
+			        } else {
+						c.addNullAttribute("Arredondamento");
+			        }
+
+			        results.add(c);
+				}
+			}
+		}
+		double discounts = SummContractTotal($hashDis);
+		// due to ticket #103
+		double calculus = $doubleSum.getValue() + $childSum.getValue();
+		diff = Math.abs(calculus - $invamt.doubleValue());
+		if (diff > 0.001 ) {
+			consequenceBuilder.setRule("R12-5","Validação Total da Fatura");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription("Valor total da fatura diverge da soma das seções.");
+
+			c.addAttribute("Número do Acesso", "n/a");
+			c.addAttribute("Número do Contrato", "n/a");
+			c.addDoubleAttribute("Valor Calculado", $doubleSum.getValue());
+			c.addAttribute("Valor Apresentado", $invamt);
+			c.addDoubleAttribute("Valor Descontos no Total", discounts);
+	        if (diff <= 0.01) {
+				c.addAttribute("Arredondamento", "Possível erro de arredondamento.");
+	        } else {
+				c.addNullAttribute("Arredondamento");
+	        }
+
+			results.add(c);
+		}
+end

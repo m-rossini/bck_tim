@@ -1,0 +1,102 @@
+package br.com.auster.tim.billchekout;
+
+import java.util.List;
+import java.util.Iterator;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.common.lang.NamedDouble;
+import br.com.auster.tim.billcheckout.util.XStreamLoader;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+rule "Regra R04.3 - Loading CredCorp Information"
+	salience 90
+	when
+
+		Account ( accountType == "L", $custCode : accountNumber )
+
+	then
+	// load all credcorp info
+	XStreamLoader loader = new XStreamLoader();
+	List nodes = loader.loadXStreamInfo($custCode, true, NamedDouble.class);
+	GlobalForLog.log("DEBUG", "Checking account " + $custCode);
+	if (nodes != null) {
+		for (Iterator it = nodes.iterator(); it.hasNext(); ) {
+			// asserting namedDouble for child accounts
+			NamedDouble d = (NamedDouble) it.next();
+			GlobalForLog.log("DEBUG", "loaded double info " + d.getName() + " with value " + d.getValue());
+			assert(d);
+		}
+	}
+	// create sum named doubles
+	assert(new NamedDouble("child-credit"));
+	assert(new NamedDouble("child-count"));
+end
+
+
+
+rule "Regra R04.3 - Sum. child account credits"
+	salience 70
+	when
+
+		Account ( accountType == "L", $custCode : accountNumber )
+
+		$acc : NamedDouble( name == "child-credit" )
+
+		$count : NamedDouble( name == "child-count" )
+
+		NamedDouble( $name : name -> ($name.endsWith("-credit") && (! $name.equals($custCode + "-credit")) && (!"child-credit".equals($name))),
+		 		     $childAmount : value )
+	then
+		$acc.addTo($childAmount.doubleValue());
+		GlobalForLog.log("DEBUG", "acc added with " + $childAmount.doubleValue() + " for named " + $name);
+		$count.addTo(1);
+end
+
+
+rule "Regra R04.3 - Checking CredCorp credits final amounts"
+	salience 50
+	when
+		Account ( accountType == "L", $custCode : accountNumber, $carrierCode : carrierCode )
+
+		NamedDouble( name == "child-credit", $childTotal : value )
+
+		NamedDouble( name == "child-count", $childCount : value )
+
+		NamedDouble( $name : name -> ($name.equals($custCode + "-debit")), $accountTotal : value )
+	then
+		GlobalForLog.log("DEBUG", "Debit for account is " + $accountTotal);
+		GlobalForLog.log("DEBUG", "SUM of Credits is " + $childTotal.doubleValue() );
+		double diff = Math.abs(Math.abs($childTotal.doubleValue()) - Math.abs($accountTotal.doubleValue()));
+		if (diff >= 0.009) {
+			consequenceBuilder.setRule("R04-3","Validação credcorp");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription("Créditos e débitos de CredCorp não conferem.");
+
+	        c.addDoubleAttribute("Total de descontos", $childTotal.doubleValue());
+	        c.addLongAttribute("Quantidade de contas", $childCount.longValue());
+	        c.addDoubleAttribute("Cobrança na conta", $accountTotal.doubleValue());
+			results.add(c);
+		}
+end

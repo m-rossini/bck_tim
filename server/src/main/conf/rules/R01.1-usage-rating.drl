@@ -1,0 +1,368 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.DimensionCache;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.TIMUsageGuidingFlag;
+import br.com.auster.om.util.ParserUtils;
+import java.util.List;
+import java.util.ArrayList;
+import br.com.auster.tim.billcheckout.tariff.CachedRatesGuidingVO;
+import br.com.auster.tim.billcheckout.tariff.RatesGuidingVO;
+import br.com.auster.billcheckout.caches.CacheableKey;
+import br.com.auster.tim.billcheckout.tariff.RatesGuidingCache;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global br.com.auster.tim.billcheckout.tariff.RatesGuidingCache ratingsCache;
+global java.util.List results;
+
+/* Compara os valores calculados e cobrados, tanto para voz como de mensagens */
+function boolean isChargedAmountIncorrect_R01_1(Double _totalAmount, double calculatedAmount) {
+	double result = Math.abs( Math.abs(calculatedAmount) - Math.abs(_totalAmount.doubleValue()) );
+	if (result > 0.010001) {
+		// Differences greater then 0.010001 are automatically set as errors
+		return true;
+	} else if (result > 0.007) {
+		String strCalculated = ParserUtils.asDoubleString(Math.abs(calculatedAmount));
+		String strAmount = ParserUtils.asDoubleString(Math.abs(_totalAmount.doubleValue()));	
+		#evita de dar exception ao usar substring(0,4)
+		#evita critica indevida quando comparava 0.3 com 0.30 no formato string
+		if (strCalculated.length()<4){
+			int x = 4 - strCalculated.length();
+			for (int i=0; i < x; i++){
+				strCalculated = strCalculated.concat("0");
+			}
+		}
+		if (strAmount.length()<4){
+			int x = 4 - strAmount.length();
+			for (int i=0; i < x; i++){
+				strAmount = strAmount.concat("0");
+			}
+		}
+		// This condition is to validate rounding problems. If difference is greater then 0.007
+		// but bellow 0.010001, then let's check the string version of each value.
+		// Comparação assim feita, devido ao arredondamento de truncar a segunda casa decimal no totalAmount do BGH
+		return (! strCalculated.substring(0,4).equals(strAmount.substring(0,4)) );
+	}
+	return false;
+}
+/* Calcula valores tanto para eventos de voz como de mensagens 
+   Logica montada considerando a ordenacao do init_volume na query, das tarifas encontradas	
+*/
+function double calculateExpectedAmount_R01_1(List listTarif, double _units) {
+	double calculatedAmount = 0.0;
+	double unitsRest = _units; //unidades restantes à cobrar
+	double unitsCharge = 0.0;  //unidades a cobrar para um init-end_volume(seconds)
+	
+	for (int i=0; i < listTarif.size(); i++){
+		RatesGuidingVO tariff = (RatesGuidingVO) listTarif.get(i);
+		int init_volume = tariff.getInitVolume();
+		double end_volume  = tariff.getEndVolume();
+		int step_volume = tariff.getStepVolume();
+		double step_cost = tariff.getStepCost();
+		
+		if(unitsRest <= end_volume){
+			calculatedAmount += (unitsRest / step_volume) * step_cost;
+			break;
+		}
+		else{
+			//Se for a primeira tarifa, cobra de init_volume a end_volume(segundos, não o original em iterações)
+			if(i==0){
+				unitsCharge = end_volume;
+			}else{
+				//Senão, cobra do End_volume atual menos do End_volume anterior
+				//Cobre períodos com espaçamento, considerando o fim de um, o inicio do outro
+				RatesGuidingVO tarifaAnterior = (RatesGuidingVO) listTarif.get(i-1);
+				unitsCharge = end_volume - tarifaAnterior.getEndVolume(); //intervalo de unidades a serem cobradas
+			}
+			calculatedAmount += (unitsCharge / step_volume) * step_cost;
+			unitsRest = unitsRest - unitsCharge; //unidades restantes
+		}
+		//Nos casos onde estivermos na última faixa de cobranca e ainda sobrou unidades da duração do evento
+		//para se tarifar, o cálculo deve ser abortado e gerar critica.
+		if( (listTarif.size() == (i+1)) && unitsRest > 0){
+			calculatedAmount = -9999; //valor de -9999 apenas indicando que foi impossivel calcular
+			return calculatedAmount;
+		}
+	}
+	return Math.abs(calculatedAmount);
+}
+
+/** Verifica o plano da conta, para uma chamada local. Regra não validará caso return==false **/
+function boolean isPlanValid(String plan, Boolean localCall){
+	if ( (plan.startsWith("Plano Meu Sonho") || plan.startsWith("TIM Meia Tarifa")) && localCall.booleanValue() ){
+		return false;
+	}
+	return true;
+}
+
+/**	Verifica a orientação da chamada (originada-incomingFlag=='N' ou recebida-incomingFlag=='Y') **/
+function String verifyTypeOfCall(String type){
+	//chamadas recebidas
+	if("AD".equalsIgnoreCase(type) || "AC".equalsIgnoreCase(type) || 
+	   "DSL".equalsIgnoreCase(type)|| "VCR".equalsIgnoreCase(type)){
+		return "Y";
+	}
+	//chamadas originadas
+	return "N";
+}
+
+/**	Retorna tarifa(s) existentes para uma chamada 
+ *	Alguma das variaveis: Zona Tarifária -> $usage.getTariff() e Modulação -> $usage.getTariffClass();
+ */
+function List findTariffForUsage(RatesGuidingCache ratingsCache, TIMUsageDetail $usage, String incomingFlag){
+	String state = $usage.getInvoice().getAccount().getAccountState();
+	CacheableKey key = CachedRatesGuidingVO.createAlternateKey($usage.getRatePlan(), $usage.getSvcId(), $usage.getTariff(), incomingFlag, $usage.getTariffClass(), state);
+	CachedRatesGuidingVO rate = (CachedRatesGuidingVO) ratingsCache.getFromCache(key);
+	
+	if(rate!=null){
+		List listRating = rate.getRating($usage.getDatetime());
+		//Se a data da chamada for inferior à de efetivação, retorna null do RangeMap
+		if (listRating!=null){
+			//existe tarifa cadastrada em USAGE_RATES para esta chamada, onde a data da chamada
+			//possui uma tarifa com data de efetivação anterior à esta data chamada.
+			return listRating;
+		}
+		else{
+			//Query retornou registros mas tarifas encontradas não são aplicáveis
+			//Data da chamada < Data de Efetivação das tarifas encontradas para esta chamada.
+			return null;
+		}
+	}
+	return null;
+}
+
+/** Metodo que gera consequencia para quando chamada possui duracao maior que o end_volume(segs) **/
+function void consequenceFailPeriod_R01_1(TelcoConsequenceBuilder consequenceBuilder, DimensionCache dimensionCache,
+									List results, TIMUsageDetail $usage, String $carrierCode, String incomingFlag){
+								
+	consequenceBuilder.setRule("R01-1","Tarifação de Chamada Incorreta");
+	consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+	consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+	consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+	consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+	consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+	
+	ContractInfoSection contractInfo = (ContractInfoSection) $usage.getSection().getParentSection();		
+	TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+	
+	c.setDescription("A duração deste evento é maior que o volume configurado para tarifação");
+	c.addAttribute("Número Origem", $usage.getChannelId());
+	c.addAttribute("Número Destino", $usage.getCalledNumber());
+	c.addDateTimeAttribute("Data/Hora", $usage.getDatetime());
+	c.addAttribute("Duração Cobrada", $usage.getRoundedDuration());
+	c.addAttribute("Plano", contractInfo.getRatePlan());
+	c.addAttribute("Serviço", $usage.getServiceDescription());
+	c.addAttribute("Tariff Zone", $usage.getTariff());
+	c.addAttribute("Rate TimeZone", $usage.getTariffClass());
+	c.addAttribute("Orientação da Chamada", "N".equalsIgnoreCase(incomingFlag) ? "originada(N)" : "recebida(Y)" );
+	c.addDoubleAttribute("Valor cobrado", $usage.getTotalAmount());
+	c.addAttribute("Valor esperado", "N/A");
+			
+	results.add(c);
+}
+
+/**
+ * Esta sub-regra valida a tarifação de detalhes de uso (Voz) com duração cobrada (billedUnits) maior que zero.
+ */
+rule "R01-1A - Rated Amount Validation For Voice"
+	salience 50
+	when
+		$usage : TIMUsageDetail ( voiceUsage  == true,
+								  mobile == true, //não trata STFC, somente móvel
+								  freeUnitIndicator == "N", //freeUnitIndicator
+								  microCellDesc == null, //microCellShortDescription
+								  discountAmount < 0.001, //promotionsDiscAmount
+								  $totalAmount : totalAmount > 0, //amountAfterPromotionsDisc
+								  $amountBefore : amountBeforePromotions != null, //amountBeforePromotionsDisc
+								  $cspBGH : carrierCode -> ("41".equals($cspBGH) || "0".equals($cspBGH)),
+								  $duration : roundedDuration -> (($duration != null) && ($duration.getUnits() > 0)),
+								  $localCall  : localCall,
+								  $ratePlan   : ratePlan,
+								  $dateOfCall : datetime,
+								  $typeOfCall : type   
+		                        )
+		$account : Account( $carrierCode : carrierCode )
+		eval (isPlanValid($ratePlan, $localCall))
+		eval ($totalAmount.doubleValue() == $amountBefore.doubleValue())
+	then
+		String incomingFlag = verifyTypeOfCall($typeOfCall);
+		List listTariff = findTariffForUsage(ratingsCache, $usage, incomingFlag);
+		if (listTariff != null){
+			double calculatedAmount = calculateExpectedAmount_R01_1(listTariff, $duration.getSeconds());
+			if (calculatedAmount==-9999){
+				consequenceFailPeriod_R01_1(consequenceBuilder,dimensionCache,results,$usage,$carrierCode,incomingFlag);
+			}
+			else{
+				if ( isChargedAmountIncorrect_R01_1($totalAmount, calculatedAmount) ){
+					consequenceBuilder.setRule("R01-1","Tarifação de Chamada Incorreta");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+			
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("O valor do minuto cobrado nesta chamada não condiz com a tarifa especificada.");
+			
+					ContractInfoSection contractInfo = (ContractInfoSection) $usage.getSection().getParentSection();
+					
+					c.addAttribute("Número Origem", $usage.getChannelId());
+					c.addAttribute("Número Destino", $usage.getCalledNumber());
+					c.addDateTimeAttribute("Data/Hora", $usage.getDatetime());
+					c.addAttribute("Duração Cobrada", $duration);
+					c.addAttribute("Plano", contractInfo.getRatePlan());
+					c.addAttribute("Serviço", $usage.getServiceDescription());
+					c.addAttribute("Tariff Zone", $usage.getTariff());
+					c.addAttribute("Rate TimeZone", $usage.getTariffClass());
+					c.addAttribute("Orientação da Chamada", "N".equalsIgnoreCase(incomingFlag) ? "originada(N)" : "recebida(Y)" );
+					c.addDoubleAttribute("Valor cobrado", $totalAmount.doubleValue());
+					c.addDoubleAttribute("Valor esperado", calculatedAmount);
+			
+					results.add(c);
+				}
+			}
+		}
+end
+
+/**
+ * Esta regra valida a tarifação de detalhes de uso (Mensagens) com duração cobrada (billedUnits) maior que zero.
+ */
+rule "R01-1A - Rated Amount Validation For Events"
+	salience 50
+	when
+		$usage : TIMUsageDetail ( eventUsage  == true,
+								  mobile == true,
+								  freeUnitIndicator == "N",
+								  microCellDesc == null,
+								  discountAmount < 0.001,
+								  $totalAmount : totalAmount > 0,
+								  $amountBefore : amountBeforePromotions != null,
+								  $cspBGH : carrierCode -> ("41".equals($cspBGH) || "0".equals($cspBGH)),
+								  $duration : roundedDuration != null,
+								  $typeOfCall : type
+		                        )
+
+		$account : Account( $carrierCode : carrierCode )
+		eval ( $totalAmount.doubleValue() == $amountBefore.doubleValue() )
+	then
+		String incomingFlag = verifyTypeOfCall($typeOfCall);
+		List listTariff = findTariffForUsage(ratingsCache, $usage, incomingFlag);
+		if (listTariff != null){
+			double calculatedAmount = calculateExpectedAmount_R01_1(listTariff, 1);
+			if (calculatedAmount==-9999){
+				consequenceFailPeriod_R01_1(consequenceBuilder,dimensionCache,results,$usage,$carrierCode,incomingFlag);
+			}
+			else{
+				if ( isChargedAmountIncorrect_R01_1($totalAmount, calculatedAmount) ){		
+					consequenceBuilder.setRule("R01-1","Tarifação de Chamada Incorreta");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+			
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("O valor por unidade cobrado neste evento não condiz com a tarifa especificada.");
+			
+					ContractInfoSection contractInfo = (ContractInfoSection) $usage.getSection().getParentSection();
+			
+					c.addAttribute("Número Origem", $usage.getChannelId());
+					c.addAttribute("Número Destino", $usage.getCalledNumber());
+					c.addDateTimeAttribute("Data/Hora", $usage.getDatetime());
+			
+					if ($duration.getUnits() < 1) {
+						c.addAttribute("Duração Cobrada", "N/A");
+					} else {
+						c.addAttribute("Duração Cobrada", $duration);
+					}
+					c.addAttribute("Plano", contractInfo.getRatePlan());
+					c.addAttribute("Serviço", $usage.getServiceDescription());
+					c.addAttribute("Tariff Zone", $usage.getTariff());
+					c.addAttribute("Rate TimeZone", $usage.getTariffClass());
+					c.addAttribute("Orientação da Chamada", "N".equalsIgnoreCase(incomingFlag) ? "originada(N)" : "recebida(Y)" );
+					c.addDoubleAttribute("Valor cobrado", $totalAmount.doubleValue());
+					c.addDoubleAttribute("Valor esperado", calculatedAmount);
+			
+					results.add(c);
+				}
+			}
+		}
+end
+/**
+ * Esta versão da regra será acionada para detalhes de uso que não possuam informação de duração cobrada (billedUnits)
+ * ou que esta informação esteja com valor zero. Eventos sem definição de ser: Voz/Dados/Mensagens.
+ */
+rule "R01-1B - Rated Amount Validation"
+	salience 50
+	when
+		$usage : TIMUsageDetail ( eventUsage  == false,
+								  dataUsage  == false,
+								  voiceUsage  == false,
+								  mobile == true,
+								  freeUnitIndicator == "N",
+								  microCellDesc == null,
+								  discountAmount < 0.001,
+								  $totalAmount : totalAmount > 0,
+								  $amountBefore : amountBeforePromotions != null,
+								  $cspBGH : carrierCode -> ("41".equals($cspBGH) || "0".equals($cspBGH)),
+								  $duration : roundedDuration,
+								  $typeOfCall : type
+		                         )
+		$account : Account( $carrierCode : carrierCode )
+		eval ( $totalAmount.doubleValue() == $amountBefore.doubleValue() )
+	then
+		String incomingFlag = verifyTypeOfCall($typeOfCall);
+		List listTariff = findTariffForUsage(ratingsCache, $usage, incomingFlag);
+		if (listTariff != null){
+			double calculatedAmount = calculateExpectedAmount_R01_1(listTariff, 1);
+			if (calculatedAmount==-9999){
+				consequenceFailPeriod_R01_1(consequenceBuilder,dimensionCache,results,$usage,$carrierCode,incomingFlag);
+			}
+			else{
+				if ( isChargedAmountIncorrect_R01_1($totalAmount, calculatedAmount) ){
+					consequenceBuilder.setRule("R01-1","Tarifação de Chamada Incorreta");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+			
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("O valor final cobrado neste evento não condiz com a tarifa especificada.");
+			
+					ContractInfoSection contractInfo = (ContractInfoSection) $usage.getSection().getParentSection();
+			
+					c.addAttribute("Número Origem", $usage.getChannelId());
+					c.addAttribute("Número Destino", $usage.getCalledNumber());
+					c.addDateTimeAttribute("Data/Hora", $usage.getDatetime());
+					if ($duration != null) {
+						c.addAttribute("Duração Cobrada", $duration);
+					} else {
+						c.addAttribute("Duração Cobrada", "N/A");
+					}
+					c.addAttribute("Plano", contractInfo.getRatePlan());
+					c.addAttribute("Serviço", $usage.getServiceDescription());
+					c.addAttribute("Tariff Zone", $usage.getTariff());
+					c.addAttribute("Rate TimeZone", $usage.getTariffClass());
+					c.addAttribute("Orientação da Chamada", "N".equalsIgnoreCase(incomingFlag) ? "originada(N)" : "recebida(Y)" );
+					c.addDoubleAttribute("Valor cobrado", $totalAmount.doubleValue());
+					c.addDoubleAttribute("Valor esperado", calculatedAmount);
+			
+					results.add(c);
+				}
+			}
+		}
+end

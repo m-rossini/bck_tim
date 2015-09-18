@@ -1,0 +1,95 @@
+<?xml version = "1.0" encoding = "UTF-8"?>
+
+<root>
+	<sql:configuration xmlns:sql="http://www.auster.com.br/common/sql/">
+		<sql:statements>
+
+			<sql:statement name="findServiceFK">
+				<sql:query>
+					SELECT OBJID FROM QLF_SERVICES
+					WHERE DESCRIPTION = ?
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="findServiceSNCodeFK">
+				<sql:query>
+					SELECT OBJID FROM QLF_SERVICES
+					WHERE SVC_CODE = ?
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="findPlanFK">
+				<sql:query>
+					SELECT OBJID FROM QLF_PLANS
+					WHERE DESCRIPTION = ?
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="findPlanTMCodeFK">
+				<sql:query>
+					SELECT TMCODE FROM QLF_PLANS
+					WHERE DESCRIPTION = ?
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="findPlanByTMCode">
+            	<sql:query>
+                	SELECT OBJID FROM QLF_PLANS
+                    WHERE TMCODE = ?
+                </sql:query>
+            </sql:statement>
+
+
+			<sql:statement name="findPackageFK">
+				<sql:query>
+					SELECT OBJID FROM QLF_PACKAGE
+					WHERE DESCRIPTION = ?
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="findTariffZoneFK">
+				<sql:query>
+					SELECT OBJID FROM QLF_TARIFF_ZONE
+					WHERE DESCRIPTION = ?
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="findTariffZoneByShortDesc">
+				<sql:query>
+					SELECT OBJID FROM QLF_TARIFF_ZONE
+					WHERE SHORT_DESC = ?
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="findRateTimeZoneFK">
+				<sql:query>
+					SELECT OBJID FROM QLF_RATE_TIME_ZONE
+					WHERE DESCRIPTION = ?
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="findCrashProgramGroupFK">
+				<sql:query>
+					SELECT CSGCODE FROM CRASH_SERVICE_GROUP
+					WHERE DES = ?
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="findCostCenterFK">
+				<sql:query>
+					SELECT COST_ID FROM COSTCENTER
+					WHERE COST_DESC = ?
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="findUfFK">
+				<sql:query>
+					SELECT OBJID FROM BCK_GEO_DM
+					WHERE GEO_STATE = ?
+				</sql:query>
+			</sql:statement>
+
+
+		</sql:statements>
+	</sql:configuration>
+</root>

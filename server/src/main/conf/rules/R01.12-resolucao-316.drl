@@ -1,0 +1,128 @@
+package br.com.auster.tim.billchekout;
+
+import java.util.Date;
+import java.util.Iterator;
+import java.util.Set;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+function boolean shouldDiscardUsage_R01_12(TIMUsageDetail _detail) {
+	if (_detail == null) { return true; }
+	boolean result = (! _detail.isVoiceUsage())
+					 ||  ( "AC".equals(_detail.getType())  || "AD".equals(_detail.getType()) ||
+	                       "DSL".equals(_detail.getType()) || "VCR".equals(_detail.getType()) )
+	                 || (_detail.getDatetime() == null)
+	                 || (_detail.getChannelId() == null)
+					 || (_detail.getCalledNumber() == null)
+					 || (_detail.getUsageDuration() == null);
+	return result;
+}
+
+function boolean isIntlRoamingOrCobiling(TIMUsageDetail _detail) {
+	if (_detail == null) { return true; }
+	boolean result = ( "CRIOU".equals(_detail.getTariff()) || "CRIIN".equals(_detail.getTariff()) )
+					  || _detail.getGuidingFlags().isCobilling();
+	return result;
+}
+
+
+rule "R01.12 - Final Validation"
+	salience 70
+	when
+		Account( $carrierCode : carrierCode )
+
+		# validating all calls for a specific contract
+		$contractInfo : ContractInfoSection (
+			$contractNo : contractNumber,
+			mobile == true
+			)
+
+    then
+    	if (($contractInfo.returnContractCalls() != null) && ($contractInfo.returnContractCalls().size() > 1)) {
+	    	java.util.Iterator it = $contractInfo.returnContractCalls().iterator();
+	    	TIMUsageDetail detailA = (TIMUsageDetail) it.next();
+	    	TIMUsageDetail detailB = null;
+	    	for (; it.hasNext(); ) {
+	    		// shitfting ahead in the list of details. NULL comparison it to avoid this shift in the first iteration of this loop
+				detailA = ( detailB == null ? detailA : detailB);
+				detailB = (TIMUsageDetail) it.next();
+				// if usages are ilegible for validation
+				if (shouldDiscardUsage_R01_12(detailA)) {
+					continue;
+				} else {
+					if (shouldDiscardUsage_R01_12(detailB)) {
+						// should "remove" the new detail from the validation list
+						detailB = null;
+						continue;
+					}
+				}
+				// now, both details are ilegible for validation. Validating CRIIN/CRIOU or Co-Billing
+				if ( isIntlRoamingOrCobiling(detailA) || isIntlRoamingOrCobiling(detailB)) {
+					continue;
+				}
+				// Both calls are not CRIIN/CRIOU or Co-Billing. Validating calledNumber
+				if (! detailA.getCalledNumber().equals(detailB.getCalledNumber()) ) {
+					continue;
+				}
+				// calledNumbers are equal too; validating durations
+				if ( (detailA.getUsageDuration().getSeconds() <= 3) || (detailA.getUsageDuration().getSeconds() >= 30) ||
+	                 (detailB.getUsageDuration().getSeconds() <= 3) || (detailB.getUsageDuration().getSeconds() >= 30)
+			       ) {
+					continue;
+				    }
+				// durations are in the expected range; validating callingNumber
+				// ---------------
+				// Date: 30-Jul-2008
+				// User: framos
+				// Note: Disabled since we are now forcelly handling all calls from the same subscription
+				//       using the returnContractCalls() method
+				// ---------------
+				//if (! detailA.getChannelId().equals(detailB.getChannelId()) ) {
+				//	continue;
+				//}
+				// callingNumbers are equal too; running final validation
+				if ( (detailB.getDatetime().getTime() - detailA.getDatetime().getTime()) <= (120 * 1000) ) {
+					consequenceBuilder.setRule("R01-12","Resolução 316");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("Foram encontradas chamadas que se encaixam na resolução 316.");
+					c.addAttribute("Nome da Seção", detailA.getSectionName());
+					c.addAttribute("Número Chamador", detailA.getChannelId());
+					c.addAttribute("Número Chamado", detailA.getCalledNumber());
+					c.addDateTimeAttribute("Data/Hora Chamada 1", detailA.getDatetime());
+					c.addAttribute("Duração Chamada 1", detailA.getUsageDuration());
+					c.addDateTimeAttribute("Data/Hora Chamada 2", detailB.getDatetime());
+					c.addAttribute("Duração Chamada 2", detailB.getUsageDuration());
+					results.add(c);
+				}
+			}
+		}
+end

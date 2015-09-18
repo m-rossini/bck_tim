@@ -1,0 +1,2 @@
+Plano Básico SE-GSE;0;1-Servicos Basicos;Serviço de Voz;60,04;-;0;01-1-2010
+Plano Básico SE-GSE;0:1-Servicos Basicos;Serviço de Voz;60,04;-;0;01-1-2010

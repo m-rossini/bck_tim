@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+
+<!DOCTYPE struts-config PUBLIC
+          "-//Apache Software Foundation//DTD Struts Configuration 1.1//EN"
+          "http://jakarta.apache.org/struts/dtds/struts-config_1_1.dtd">
+
+
+<struts-config>
+
+	<form-beans>
+		<form-bean name="packageForm" type="org.apache.struts.action.DynaActionForm">
+			<form-property name="uid"          	   type="java.lang.String"/>
+			<form-property name="shortDescription" type="java.lang.String"/>
+			<form-property name="description"      type="java.lang.String"/>
+			<form-property name="planUid"          type="java.lang.String[]"/>
+		</form-bean>
+		<form-bean name="promotionForm" type="org.apache.struts.action.DynaActionForm">
+			<form-property name="uid"          	   type="java.lang.String"/>
+			<form-property name="shortDesc" 	   type="java.lang.String"/>
+			<form-property name="description"      type="java.lang.String"/>
+			<form-property name="promotionsUid"    type="java.lang.String[]"/>
+		</form-bean>
+		<form-bean name="discountForm" type="org.apache.struts.action.DynaActionForm">
+			<form-property name="uid"          	   type="java.lang.String"/>
+			<form-property name="discountDesc"     type="java.lang.String"/>
+			<form-property name="discountsTables"  type="java.lang.String"/>
+			<form-property name="serviceShortDesc" type="java.lang.String"/>
+			<form-property name="discountsDescUF"  type="java.lang.String"/>
+		</form-bean>
+		<form-bean name="discountTableForm" type="org.apache.struts.action.DynaActionForm">
+			<form-property name="discountDescUid"  type="java.lang.String"/>
+			<form-property name="discountUid"	   type="java.lang.String"/>
+			<form-property name="rangeName"        type="java.lang.String"/>
+		</form-bean>
+		<form-bean name="discountRangeForm" type="org.apache.struts.action.DynaActionForm">
+			<form-property name="uid"          	   type="java.lang.String"/>
+			<form-property name="discountUid"	   type="java.lang.String"/>
+			<form-property name="discountDescUid"  type="java.lang.String"/>
+			<form-property name="lowerLimit"	   type="java.lang.String"/>
+			<form-property name="upperLimit"	   type="java.lang.String"/>
+			<form-property name="discountRate"	   type="java.lang.String"/>
+		</form-bean>
+		<form-bean name="searchForm" type="org.apache.struts.action.DynaActionForm">
+			<form-property name="parameterName"    type="java.lang.String"/>
+			<form-property name="parameterValue"   type="java.lang.String"/>
+			<form-property name="searchType"  	   type="java.lang.String"/>
+		</form-bean>
+		<form-bean name="searchTariffForm" type="org.apache.struts.action.DynaActionForm">
+			<form-property name="selectedRatePlan" type="java.lang.String"/>
+			<form-property name="planUF" 	   	type="java.lang.String"/>
+		</form-bean>
+	</form-beans>
+
+	<action-mappings>
+
+        <action    path="/parse-accounts"
+                   type="br.com.auster.tim.billcheckout.portal.ParseUploadedBGHAction"
+                   scope="request">
+               <forward        name="show-accounts" path="/show-accounts.do"/>
+        </action>
+
+
+    	<action
+    	path="/promotionPackages"
+        type="br.com.auster.tim.billcheckout.portal.packages.PackageAction"
+		name="packageForm"
+        parameter="operation"
+	    scope="request">
+			<forward   	name="list"		path="/packages/listPackage.jsp"/>
+			<forward    name="detail"   path="/packages/packageAction.jsp"/>
+			<forward    name="done"     path="/packages/actionDone.jsp"/>
+			<forward    name="error"    path="/error.jsp"/>
+    	</action>
+
+    	<action
+    	path="/plansPopup"
+        type="br.com.auster.tim.billcheckout.portal.packages.PlansPopupAction"
+        parameter="operation"
+	    scope="request">
+			<forward   	name="list"		path="/packages/listPlans-popup.jsp"/>
+			<forward   	name="reload"	path="/packages/packageAction.jsp"/>
+    	</action>
+    	
+    	<action
+    	path="/plansDiscountPopup"
+        type="br.com.auster.tim.billcheckout.portal.packages.PlansDiscountPopupAction"
+        parameter="operation"
+	    scope="request">
+			<forward   	name="list"		path="/packages/listPlansDiscount-popup.jsp"/>
+			<forward   	name="reload"	path="/packages/packageAction.jsp"/>
+    	</action>
+
+    	<action
+    	path="/mandatoryPlans"
+        type="br.com.auster.tim.billcheckout.portal.packages.PlansAction"
+        parameter="operation"
+	    scope="request">
+			<forward   	name="list"		path="/plans/listPlans.jsp"/>
+    	</action>
+
+    	<action
+    	path="/progressiveDiscount"
+        type="br.com.auster.tim.billcheckout.portal.discount.ProgDiscountAction"
+        name="discountForm"
+        validate="true"
+        parameter="operation"
+	    scope="request">
+			<forward   	name="list"		path="/progressive-discount/listDiscount.jsp"/>
+			<forward    name="detail"   path="/progressive-discount/discountAction.jsp"/>
+			<forward    name="done"     path="/progressive-discount/actionDone.jsp"/>
+    	</action>
+
+    	<action
+    	path="/discountRangePopup"
+        type="br.com.auster.tim.billcheckout.portal.discount.DiscountRangePopupAction"
+        name="discountRangeForm"
+        validate="true"
+        parameter="operation"
+	    scope="request">
+			<forward    name="detail"   path="/progressive-discount/discountRange-popup.jsp"/>
+			<forward    name="done"     path="/progressive-discount/forwardToListDiscTable.jsp"/>
+    	</action>
+
+    	<action
+    	path="/discountTable"
+        type="br.com.auster.tim.billcheckout.portal.discount.DiscountTableAction"
+        name="discountTableForm"
+        validate="true"
+        parameter="operation"
+	    scope="request">
+			<forward   	name="detail"          path="/progressive-discount/listDiscountTable.jsp"/>
+			<forward    name="done"            path="/progressive-discount/discDescActionDone.jsp"/>
+			<forward    name="progTable"       path="/discountTable.do?operation=detail"/>
+			<forward    name="deleteRateDone"  path="/progressive-discount/discRateActionDone.jsp"/>
+    	</action>
+
+    	<action
+    	path="/discountTablePlansPopup"
+        type="br.com.auster.tim.billcheckout.portal.discount.DiscountPlansPopupAction"
+        parameter="operation"
+	    scope="request">
+			<forward   	name="list"		path="/progressive-discount/listPlans-popup.jsp"/>
+			<forward   	name="reload"	path="/discountTablePlansPopup.do?operation=detail"/>
+    	</action>
+
+    	<action
+    	path="/exclusivePromotion"
+        type="br.com.auster.tim.billcheckout.portal.excpromotions.ExclusivePromotionAction"
+        name="promotionForm"
+        validate="true"
+        parameter="operation"
+	    scope="request">
+			<forward   	name="list"		path="/exclusive-promotions/listExcPromotion.jsp"/>
+			<forward    name="detail"   path="/exclusive-promotions/excPromotionAction.jsp"/>
+			<forward    name="done"     path="/exclusive-promotions/actionDone.jsp"/>
+			<forward    name="error"    path="/error.jsp"/>
+    	</action>
+
+    	<action
+    	path="/promotionsPopup"
+        type="br.com.auster.tim.billcheckout.portal.excpromotions.PromotionsPopupAction"
+        parameter="operation"
+	    scope="request">
+			<forward   	name="list"		path="/exclusive-promotions/listPromotions-popup.jsp"/>
+			<forward   	name="reload"	path="/exclusive-promotions/excPromotionAction.jsp"/>
+    	</action>
+
+    	<action
+    	path="/searchParameters"
+        type="br.com.auster.tim.billcheckout.portal.bscs.SearchParametersAction"
+		name="searchForm"
+        parameter="operation"
+	    scope="request">
+			<forward   	name="searchParameters"		path="/bscs-integration/search.jsp"/>
+			<forward   	name="showResult"		    path="/showResult.do"/>
+			<forward   	name="showServHistResult"	path="/bscs-integration/servicesHist.jsp"/>
+    	</action>
+
+    	<action
+    	path="/showResult"
+        type="br.com.auster.tim.billcheckout.portal.bscs.ShowResultAction"
+        name="searchForm"
+        parameter="operation"
+	    scope="request">
+			<forward   	name="showAccount"		path="/bscs-integration/account.jsp"/>
+			<forward   	name="showContract"		path="/bscs-integration/contract.jsp"/>
+    	</action>
+
+    	<action
+    	path="/showServiceHist"
+        type="br.com.auster.tim.billcheckout.portal.bscs.ShowServiceHistAction"
+        parameter="operation"
+	    scope="request">
+			<forward   	name="showServiceHist"		path="/bscs-integration/serviceHist.jsp"/>
+    	</action>
+
+    	<action
+    	path="/showServicesHist"
+        type="br.com.auster.tim.billcheckout.portal.bscs.ShowServicesHistAction"
+		name="searchForm"
+        parameter="operation"
+	    scope="request">
+			<forward   	name="showServicesHist"		path="/bscs-integration/servicesHist.jsp"/>
+    	</action>
+
+		<!-- Tariff viewer -->
+
+    	<action
+    	path="/searchTariff"
+        type="br.com.auster.tim.billcheckout.portal.tariff.SearchTariffAction"
+		name="searchTariffForm"
+		parameter="operation"
+	    scope="request">
+			<forward  	name="search"	 	 path="/tariff/searchTariff.jsp"/>
+			<forward   	name="listVoice" 	 path="/tariff/displayVoice.jsp"/>
+			<forward   	name="listService" 	 path="/tariff/displayService.jsp"/>
+			<forward   	name="listPackage" 	 path="/tariff/displayPackage.jsp"/>
+			<forward   	name="listData" 	 path="/tariff/displayData.jsp"/>
+			<forward   	name="listMicrocell" path="/tariff/displayMC.jsp"/>
+			<forward   	name="listNPack" 	 path="/tariff/displayNPack.jsp"/>
+			<forward   	name="listMeuSonho"  path="/tariff/displayMeuSonho.jsp"/>
+    	</action>
+    	
+    	<action
+	    path="/tariffsPopup"
+	    type="br.com.auster.tim.billcheckout.portal.tariff.TariffsPopupAction"
+	    name="searchTariffForm"
+	    parameter="operation"
+		scope="request">
+		    <forward   	name="historyVoice" 	 path="/tariff/displayVoice-popup.jsp"/>
+			<forward   	name="historyService" 	 path="/tariff/displayService-popup.jsp"/>
+			<forward   	name="historyPackage" 	 path="/tariff/displayPackage-popup.jsp"/>
+			<forward   	name="historyData" 	 	 path="/tariff/displayData-popup.jsp"/>
+			<forward   	name="historyMicrocell"  path="/tariff/displayMC-popup.jsp"/>
+			<forward   	name="historyNPack" 	 path="/tariff/displayNPack-popup.jsp"/>
+			<forward   	name="meuSonhoList" 	 path="/tariff/displayMeuSonho-popup.jsp"/>
+    	</action>
+
+
+	</action-mappings>
+
+  	<controller inputForward="true" tempDir="/tmp"/>
+
+
+	<message-resources parameter="br.com.auster.tim.billcheckout.messages.CustomUserMessages" key="usersCustom"/>
+  	<message-resources parameter="br.com.auster.tim.billcheckout.messages.CustomMessages" key="custom"/>
+  	<message-resources parameter="br.com.auster.tim.billcheckout.messages.PromotionPackageMessages" key="packages"/>
+  	<message-resources parameter="br.com.auster.tim.billcheckout.messages.PlansMessages" key="plans"/>
+  	<message-resources parameter="br.com.auster.tim.billcheckout.messages.BSCSIntegration" key="bscsintegration"/>
+  	<message-resources parameter="br.com.auster.tim.billcheckout.messages.ProgressiveDiscountMessages" key="progressiveDiscount"/>
+  	<message-resources parameter="br.com.auster.tim.billcheckout.messages.ExclusivePromotionsMessages" key="promotions"/>
+  	<message-resources parameter="br.com.auster.tim.billcheckout.messages.TariffMessages" key="tariff"/>
+
+</struts-config>
+
+

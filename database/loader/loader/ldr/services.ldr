@@ -1,0 +1,12 @@
+LOAD DATA
+BADFILE 'log/services.bad'
+DISCARDFILE 'log/services.dsc'
+APPEND
+INTO TABLE QLF_SERVICES
+FIELDS TERMINATED BY ","
+( 
+ 	OBJID 				EXPRESSION "seq1.nextval", 
+	SVC_CODE 			position(1:2048) "loader.word(:svc_code,1,';')",
+	DESCRIPTION 	position(1:1) "loader.word(:svc_code,2,';')",
+	SHORT_DESC 		position(1:1) "loader.word(:svc_code,3,';')"
+)

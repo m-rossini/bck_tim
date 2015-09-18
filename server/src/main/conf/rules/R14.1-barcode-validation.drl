@@ -1,0 +1,235 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.om.invoice.BarCode;
+import br.com.auster.om.invoice.Identity;
+import br.com.auster.tim.om.invoice.PaystubSection;
+
+import br.com.auster.common.util.CommonsServicesBarCode;
+import br.com.auster.tim.billcheckout.util.TIMBarCode;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+function String[] getCompanyList() {
+	return new String []{"0111", "0110", "0109", "0052", 
+	                     "0034", "0035", "0043", "0037", 
+	                     "0040", "0059", "0056", "0046", "0062"
+	                    };
+}
+
+/**
+ * RULE #14.1: Validação da Estrutura do Código de Barras
+ */
+
+rule "Regra 14-1A"
+	salience 0	
+	when	
+		Account( $accNo : accountNumber , $carrierCode : carrierCode)
+		$barcode : BarCode()
+		eval( ! CommonsServicesBarCode.validateBarCode($barcode.getOCRRightLine()) )
+	then
+		consequenceBuilder.setRule("R14-1","Validação de Código de Barras"); 
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));			
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Dígito verificador do código de barras não confere.");					
+
+        c.addAttribute("Código de Barras",  $barcode.getOCRRightLine());
+        c.addNullAttribute("Valor do Atributo");                              
+        results.add(c);
+end
+
+rule "Regra 14-1B"
+	salience 0
+	when
+		Account( $accNo : accountNumber, $carrierCode : carrierCode)
+		$barcode : BarCode()
+		eval( ! CommonsServicesBarCode.TELECOM_SEGMENT_CODE.equals(CommonsServicesBarCode.getSegmentId($barcode.getOCRRightLine())) )
+	then
+		consequenceBuilder.setRule("R14-1","Validação de Código de Barras"); 
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));			
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Identificador de segmento de telecomunicações inválido no código de barras.");					
+		
+        c.addAttribute("Código de Barras",  $barcode.getOCRRightLine());
+        c.addNullAttribute("Valor do Atributo");                              
+        results.add(c);
+end
+
+rule "Regra 14-1C"
+	salience 0
+	when
+		Account( $accNo : accountNumber, $carrierCode : carrierCode)
+		$barcode : BarCode()
+	    eval ( ! CommonsServicesBarCode.CURRENCY_VALUE_INDICATOR.equals(CommonsServicesBarCode.getValueIndicatorCode($barcode.getOCRRightLine())) )
+    then
+		consequenceBuilder.setRule("R14-1","Validação de Código de Barras"); 
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));			
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Identificador de valor inválido no código de barras.");					
+                 
+        c.addAttribute("Código de Barras",  $barcode.getOCRRightLine());
+        c.addNullAttribute("Valor do Atributo");                              
+        results.add(c);
+end
+
+rule "Regra 14-1D"
+	salience 0
+	when
+		Account( $accNo : accountNumber, $carrierCode : carrierCode)
+		$barcode : BarCode(alphaNumericBarCode != null)
+	    eval ( ! CommonsServicesBarCode.validateEncoding($barcode.getAlphaNumericBarCode(), $barcode.getOCRRightLine()) )	
+    then
+		consequenceBuilder.setRule("R14-1","Validação de Código de Barras"); 
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));			
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Codificação do código de barras inválida.");					
+        
+        c.addAttribute("Código de Barras",  $barcode.getOCRRightLine());
+        c.addNullAttribute("Valor do Atributo");                              
+        results.add(c);
+end
+
+rule "Regra 14-1E"
+	salience 0
+	when
+		Account( $accNo : accountNumber, $carrierCode : carrierCode)
+		$barcode : BarCode()
+		eval( ! TIMBarCode.isCompanyIdentificationValid($barcode, getCompanyList()))
+    then
+		consequenceBuilder.setRule("R14-1","Validação de Código de Barras"); 
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));			
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Identificação de empresa inválida no código de  barras.");					
+        
+        c.addAttribute("Código de Barras",  $barcode.getOCRRightLine());
+        c.addNullAttribute("Valor do Atributo");                              
+        results.add(c);
+end
+
+rule "Regra 14-1F"
+	salience 0
+	when
+		Account( $accNo : accountNumber, $carrierCode : carrierCode)
+		$inv : Invoice( $invNo : invoiceNumber )	
+		$barcode : BarCode()
+		eval( ! TIMBarCode.isInvoiceSequenceNumberValid($barcode, $invNo ) )		
+    then
+		consequenceBuilder.setRule("R14-1","Validação de Código de Barras"); 
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));			
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Número de sequência inválido no código de barras.");					
+          
+        c.addAttribute("Código de Barras",  $barcode.getOCRRightLine());
+        c.addAttribute("Valor do Atributo", $invNo);                              
+        results.add(c);
+end
+
+rule "Regra 14-1G"
+	salience 0
+	when
+		Account( $accNo : accountNumber, $carrierCode : carrierCode)	
+		$barcode : BarCode( $inv : invoice )
+		Identity ( $attr1 : identityAttrib1, identityType == "customerID") 		
+		eval( ! TIMBarCode.isCustomerIDValid($barcode, $attr1 ) )		
+    then
+		consequenceBuilder.setRule("R14-1","Validação de Código de Barras"); 
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));			
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Customer ID inválido no código de barras.");					
+        
+        c.addAttribute("Código de Barras",  $barcode.getOCRRightLine());
+        c.addAttribute("Valor do Atributo", $attr1);                              
+        results.add(c);
+end
+
+rule "Regra 14-1H"
+	salience 0
+	when
+		Account( $accNo : accountNumber, $carrierCode : carrierCode)	
+		PaystubSection ( $amt : totalAmount )
+		$barcode : BarCode( $inv : invoice)
+		eval(  Math.abs(Math.abs(CommonsServicesBarCode.getValueAsDouble($barcode.getOCRRightLine())) - Math.abs($amt.doubleValue())) >= 0.009  )		
+    then
+		consequenceBuilder.setRule("R14-1","Validação de Código de Barras"); 
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));			
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Valor da Fatura não confere com código de barras.");					
+
+        c.addAttribute("Código de Barras",  $barcode.getOCRRightLine());
+        c.addAttribute("Valor do Atributo", $amt);                              
+        results.add(c);
+end
+
+rule "Regra 14-1I"
+	salience 0
+	when
+		Account( $accNo : accountNumber, $carrierCode : carrierCode)
+		$barcode : BarCode()
+		eval( ! "8".equals(CommonsServicesBarCode.getProductId($barcode.getOCRRightLine())) )
+	then
+		consequenceBuilder.setRule("R14-1","Validação de Código de Barras"); 
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));			
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Código de produto inválido no código de barras.");					
+          
+        c.addAttribute("Código de Barras",  $barcode.getOCRRightLine());
+        c.addAttribute("Valor do Atributo", CommonsServicesBarCode.getProductId($barcode.getOCRRightLine()));
+        results.add(c);
+end

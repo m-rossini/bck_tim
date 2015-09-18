@@ -1,0 +1,47 @@
+package br.com.auster.tim.billchekout;
+
+import java.util.List;
+import java.util.Iterator;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.FreeUnitsReceiptDetail;
+import br.com.auster.tim.billcheckout.util.XStreamLoader;
+import br.com.auster.tim.billcheckout.util.FreeUnitAccumulator;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+rule "Regra R03.x - Loading FU Information"
+	salience 90
+	when
+
+		Account ( $custCode : accountNumber )
+
+	then
+	// load all freeUnits info for current account
+	XStreamLoader loader = new XStreamLoader();
+	GlobalForLog.log("DEBUG", "Checking account " + $custCode);
+	List nodes = loader.loadXStreamInfo($custCode, true, FreeUnitAccumulator.class);
+	if (nodes != null) {
+		for (Iterator it = nodes.iterator(); it.hasNext(); ) {
+			// asserting namedDouble for child accounts
+			FreeUnitAccumulator info = (FreeUnitAccumulator) it.next();
+			GlobalForLog.log("DEBUG", "loaded FU info with FuID=" + info.getAccountId() + " and startDate=" + info.getPeriodStart());
+			assert(info);
+		}
+	}
+end
+

@@ -1,0 +1,204 @@
+package br.com.auster.tim.billcheckout
+
+#list any import classes here
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.billcheckout.consequence.DimensionCache;
+
+import br.com.auster.common.lang.NamedHashMap;
+
+import br.com.auster.om.util.UnitCounter;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.tim.om.invoice.FreeUnitsReceiptDetail;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.UsageFUDetail;
+import br.com.auster.tim.billcheckout.tariff.megatim.MegaTIMActivation;
+import br.com.auster.tim.billcheckout.tariff.MegaTIMVO;
+import br.com.auster.tim.billcheckout.param.ContractServicesPeriodVO;
+import br.com.auster.tim.billcheckout.param.CustomerSituationVO;
+
+import java.util.Iterator;
+
+#declare any global variables here
+global java.util.List results;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+
+
+
+
+##################
+#
+#
+# Regras R34.1
+#
+#
+##################
+
+
+
+rule "R34.1 - MegaTIM os on-net only but discounted an off-net call"
+salience 80
+when
+
+	$fudetail : UsageFUDetail( $fuid : accountID,
+							   $packageName : packageLongDescription )
+
+	TIMUsageDetail ( $coid : contractNumber,  
+					 $accNumber : channelId, 
+					 freeUnitIndicator == "F",
+					 onNet == false,
+					 $svc : svcId,
+					 $datetime : datetime,
+					 $tz : tariff,
+					 $tt : tariffClass,
+					 $duration : roundedDuration,
+					 $rateplan : ratePlan, 
+					 freeUnitDetails contains $fudetail ) 
+						 
+	MegaTIMActivation ( contractId == $coid, 
+						fuAccountId == $fuid,
+						$vo : megaTIMVO  -> ( $vo.isOnNetOnly() ))
+
+	Account ( $carrierState : carrierState,
+			  $carrierCode : carrierCode )
+	
+then
+
+	consequenceBuilder.setRule("R34-1","Eventos da Promoção Mega TIM");
+	consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+	consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+	consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+	consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+	consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+	TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+	c.setDescription("O evento beneficiado não é elegível para a promoção.");
+	c.addAttribute("Número do contrato", $coid);
+	c.addAttribute("Número do acesso", $accNumber);
+	c.addDateTimeAttribute("Data/Hora", $datetime);
+	c.addAttribute("Duração", $duration);
+	c.addAttribute("Plano", $rateplan);
+	c.addAttribute("Serviço", $svc);
+	c.addAttribute("Zona tarifária", $tz);
+	c.addAttribute("Modulação horária", $tt);
+	c.addAttribute("Pacote MegaTIM", $packageName);
+
+	results.add(c);
+end
+
+
+
+rule "R34.1 - MegaTIM benefit on usage after expiration date"
+salience 80
+when
+
+	$fudetail : UsageFUDetail( $fuid : accountID,
+							   $packageName : packageLongDescription )
+
+	TIMUsageDetail ( $coid : contractNumber,  
+					 $accNumber : channelId, 
+					 freeUnitIndicator == "F",
+					 $svc : svcId,
+					 $datetime : datetime,
+					 $tz : tariff,
+					 $tt : tariffClass,
+					 $duration : roundedDuration,
+					 $rateplan : ratePlan, 
+					 freeUnitDetails contains $fudetail ) 
+						 
+	MegaTIMActivation ( contractId == $coid, 
+						fuAccountId == $fuid,
+						activationExpirationDate > $datetime )
+
+	Account ( $carrierState : carrierState,
+			  $carrierCode : carrierCode )
+	
+then
+
+	consequenceBuilder.setRule("R34-1","Eventos da Promoção Mega TIM");
+	consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+	consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+	consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+	consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+	consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+	TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+	c.setDescription("O evento beneficiado encontra-se fora do período de validade da promoção.");
+	c.addAttribute("Número do contrato", $coid);
+	c.addAttribute("Número do acesso", $accNumber);
+	c.addDateTimeAttribute("Data/Hora", $datetime);
+	c.addAttribute("Duração", $duration);
+	c.addAttribute("Plano", $rateplan);
+	c.addAttribute("Serviço", $svc);
+	c.addAttribute("Zona tarifária", $tz);
+	c.addAttribute("Modulação horária", $tt);
+	c.addAttribute("Pacote MegaTIM", $packageName);
+
+	results.add(c);
+end
+
+
+
+rule "R34.1 - Used service does not belong to configured list of available services"
+salience 80
+when
+
+	$fudetail : UsageFUDetail( $fuid : accountID,
+							   $packageName : packageLongDescription )
+
+	TIMUsageDetail ( $coid : contractNumber,  
+					 $accNumber : channelId, 
+					 freeUnitIndicator == "F",
+					 $svc : svcId,
+					 $datetime : datetime,
+					 $tz : tariff,
+					 $tt : tariffClass,
+					 $duration : roundedDuration,
+					 $rateplan : ratePlan, 
+					 freeUnitDetails contains $fudetail ) 
+						 
+	MegaTIMActivation ( contractId == $coid, 
+						fuAccountId == $fuid,
+						$vo : megaTIMVO  -> (!$vo.hasUsageLimit($svc)) 
+					  )
+
+	Account ( $carrierState : carrierState,
+			  $carrierCode : carrierCode )
+	
+then
+
+	consequenceBuilder.setRule("R34-1","Eventos da Promoção Mega TIM");
+	consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+	consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+	consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+	consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+	consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+	TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+	c.setDescription("O evento beneficiado não é elegível para a promoção.");
+	c.addAttribute("Número do contrato", $coid);
+	c.addAttribute("Número do acesso", $accNumber);
+	c.addDateTimeAttribute("Data/Hora", $datetime);
+	c.addAttribute("Duração", $duration);
+	c.addAttribute("Plano", $rateplan);
+	c.addAttribute("Serviço", $svc);
+	c.addAttribute("Zona tarifária", $tz);
+	c.addAttribute("Modulação horária", $tt);
+	c.addAttribute("Pacote MegaTIM", $packageName);
+
+	results.add(c);
+end
+

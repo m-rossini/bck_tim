@@ -1,0 +1,87 @@
+package br.com.auster.tim.billchekout;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results; 
+
+function boolean isDateFormatMatching(String mask, Date date, String original) {
+	if (original == null || date == null) {
+		return false;
+	}
+//	SimpleDateFormat parse = new SimpleDateFormat(mask);
+//	parse.setLenient(false);
+	SimpleDateFormat format = new SimpleDateFormat(mask); 
+	format.setLenient(false);
+	if (format.format(date).equals(original)) {
+		return true;
+	}
+  	return false; 
+} 
+
+/** 
+ * RULE # 10.3 Verificação do Formato da Data de Emissão
+ */
+ 
+ #Data de Emissão no formato Incorreto
+rule "Regra 10-3"
+	salience 0	  
+	when
+		$inv : Invoice( $theDate : originalIssueDate , $issue: issueDate );
+		Account($accNo : accountNumber , $carrierCode : carrierCode)  
+		
+		eval( ! isDateFormatMatching( "dd/MM/yy", $inv.getIssueDate(), $inv.getOriginalIssueDate() ) )		
+	then	
+		consequenceBuilder.setRule("R10-3","Formato Data emissão inválida"); 
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));			
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Data de emissão da fatura com formato Incorreto");					
+                                 
+		c.addAttribute("Data de Emissão", $theDate);
+        results.add(c);
+end 
+
+/**
+ * RULE # 11.2 Verificação do Formato da Data de Vencimento
+ */
+ 
+ #Data de Vencimento no formato Incorreto.
+rule "Regra 11-2"
+	salience 0	 
+	when
+		$inv : Invoice( $theDate : originalDueDate  )
+		Account($accNo : accountNumber , $carrierCode : carrierCode) 
+				
+		eval( ! isDateFormatMatching( "dd/MM/yy", $inv.getDueDate(), $inv.getOriginalDueDate() ) )		
+	then
+		consequenceBuilder.setRule("R11-2","Formato Data vencimento inválida"); 		
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));			
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Data de vencimento da fatura com formato Incorreto");					
+                                
+		c.addAttribute("Data de Vencimento", $theDate);        
+        results.add(c);
+end 

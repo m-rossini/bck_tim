@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<project>
+
+  <modelVersion>4.0.0</modelVersion>
+  
+  <name>Billcheckout WebPortal Enterprise Application for TIM</name>
+  <artifactId>tim-billcheckout-ear</artifactId>
+  <groupId>tim</groupId>
+  <packaging>ear</packaging>
+  <url>https://jean/sites/${pom.groupId}/${pom.artifactId}-${pom.version}/index.html</url>
+  
+  <version>2.3.2</version>
+
+  <organization>
+    <name>Auster Solutions</name>
+    <url>http://www.auster.com.br</url>
+  </organization>
+  <issueManagement>
+    <system>Trac</system>
+    <url>http://jean/${pom.groupId}/billcheckout</url>
+  </issueManagement>
+
+  <repositories>
+    <!-- Auster Central Repository -->
+    <repository>
+      <id>auster</id>
+      <name>Auster Central Repository</name>
+      <url>http://jean/repository</url>
+      <layout>legacy</layout>
+    </repository>
+  </repositories>
+  
+  <ciManagement>
+    <system>continuum</system>
+    <url>http://jean:8080/continuum/</url>
+    <notifiers>
+      <notifier>
+	  <type>mail</type>
+	  <configuration>
+	    <address>continuum@auster.com.br</address>
+        </configuration>
+	 </notifier>
+    </notifiers>
+  </ciManagement>  
+
+  <distributionManagement>
+    <repository>
+      <id>auster-central-repo</id>
+      <name>Auster Central Repository</name>
+      <url>file:///repository/maven-env/central-repository</url>
+      <layout>legacy</layout>
+    </repository>
+    <!-- use the following if you ARE using a snapshot version. -->
+    <site>
+      <id>local-site</id>
+      <url>file:///repository/documentation/sites/${pom.groupId}/${pom.artifactId}-${pom.version}/</url>
+    </site>
+  </distributionManagement> 
+
+  <scm>
+    <connection>scm:svn:svn://continuum@jean/tim/billcheckout/trunk/ear</connection>
+  </scm>
+  
+  <dependencies>
+    <!-- added only to final ZIP -->
+    <dependency>
+      <artifactId>log4j</artifactId>
+      <groupId>log4j</groupId>
+      <version>1.2.12</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <artifactId>datedFileAppender</artifactId>
+      <groupId>minaret</groupId>
+      <version>1.0.2</version>
+      <scope>runtime</scope>
+    </dependency>
+    <!-- Bundled in EAR file -->
+    <dependency>
+      <groupId>tim</groupId>
+      <artifactId>tim-billcheckout-plugins</artifactId>
+      <version>2.3.2</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>tim</groupId>
+      <artifactId>tim-billcheckout-webapp</artifactId>
+      <version>2.3.2</version>
+      <type>war</type>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <artifactId>hibernate</artifactId>
+      <groupId>org.hibernate</groupId>
+      <version>3.1.2</version>
+    </dependency>
+	<dependency>
+	  <groupId>tim.infobus</groupId>
+	  <artifactId>MWIBJConnector</artifactId>
+	  <version>1.5.6</version>
+	</dependency>    
+	<dependency>
+	  <groupId>bea</groupId>
+	  <artifactId>wlclient</artifactId>
+	  <version>8.1.5</version>
+	</dependency>      
+  </dependencies>
+ 
+  <reporting>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-project-info-reports-plugin</artifactId>
+        <reportSets>
+          <reportSet>
+            <reports>
+              <!-- report>dependencies</report -->
+              <report>project-team</report>
+              <report>mailing-list</report>
+              <report>cim</report>
+              <report>issue-tracking</report>
+              <report>license</report>
+              <report>scm</report>
+            </reports>
+          </reportSet>
+        </reportSets>
+      </plugin>
+    </plugins>
+  </reporting>
+ 
+  <build>
+    <plugins>
+      <plugin>
+        <artifactId>maven-extensions</artifactId>
+        <groupId>auster</groupId>
+		<executions>
+		  <execution>
+			<id>build-zip</id>
+			<phase>package</phase>
+            <configuration>
+              <configurationFile>${basedir}/src/packaging/bundle.xml</configurationFile>
+              <artifactSeparator>:</artifactSeparator>
+              <tokenStart>@[</tokenStart>
+              <tokenEnd>]@</tokenEnd>
+            </configuration>
+            <goals>
+              <goal>prepare</goal>
+            </goals>			  
+          </execution>
+		</executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-antrun-plugin</artifactId>
+		<groupId>org.apache.maven.plugins</groupId>
+		<executions>
+		  <execution>
+		    <id>package-ear</id>
+			<phase>package</phase>
+            <configuration>
+			  <tasks>
+                <ant antfile="${basedir}/target/bundle.xml"/>
+			  </tasks>
+            </configuration>
+            <goals>
+              <goal>run</goal>
+            </goals>			  
+          </execution>
+		</executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-ear-plugin</artifactId>
+        <configuration>
+          <!-- configuring the application.xml descriptor file -->
+          <generateApplicationXml>false</generateApplicationXml>
+          <applicationXml>src/main/ear/application.xml</applicationXml>
+          <!-- defining all modules for this EAR -->
+		  <defaultJavaBundleDir>APP-INF/lib</defaultJavaBundleDir>
+          <modules>
+            <javaModule>
+              <groupId>tim</groupId>
+              <artifactId>tim-billcheckout-plugins</artifactId>
+              <bundleDir>APP-INF/lib</bundleDir>
+			  <bundleFileName>tim-billcheckout-plugins.jar</bundleFileName>
+            </javaModule>
+            <webModule>
+              <groupId>tim</groupId>
+              <artifactId>tim-billcheckout-webapp</artifactId>
+              <bundleDir>APP-INF/lib</bundleDir>
+			  <bundleFileName>tim-billcheckout-webapp.war</bundleFileName>
+            </webModule>
+          </modules>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>
+

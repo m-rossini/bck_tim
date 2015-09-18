@@ -1,0 +1,103 @@
+#created on: 28/09/2007
+package br.com.auster.tim.billchekout;
+
+#list any import classes here.
+import java.util.List;
+import java.util.Iterator;
+import java.lang.String;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.tim.billcheckout.param.PackagesByPlansVO;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.om.filter.request.BillcheckoutRequestWrapper;
+import br.com.auster.tim.om.invoice.TIMReceiptDetail;
+import br.com.auster.tim.om.invoice.FreeUnitsReceiptDetail;
+import br.com.auster.tim.billcheckout.bscs.RateplanHistVO;
+
+#declare any global variables here
+global br.com.auster.tim.billcheckout.param.PackagesByPlansCache packagesByPlansCache;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.tim.billcheckout.bscs.RateplanHistCache rateplanHist;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+rule "R28-1 - Package Different than Plan"
+
+	when
+
+		$freeUnitsReceiptDetail : FreeUnitsReceiptDetail( $package : serviceId,
+														  $contractNumber : contractNumber,
+														  $dirNumber : accessNbr)
+
+		TIMReceiptDetail( receiptGroupItems contains $freeUnitsReceiptDetail, caption == "Current FreeUnits" )
+
+		// Link contractNumber from ContractDetails with FreeUnit
+		ContractInfoSection( contractNumber == $contractNumber, $rateplan : ratePlan )
+
+		Account( $carrierCode : carrierCode,
+				 $carrierState : carrierState
+			    )
+
+		Invoice ( $startDate : cycleStartDate,
+				  $endDate : cycleEndDate
+				)
+
+		BillcheckoutRequestWrapper ( $request : request )
+
+	then
+
+		RateplanHistVO rateplanVO = (RateplanHistVO) rateplanHist.getFromCache( RateplanHistVO.createKey($contractNumber) );
+		GlobalForLog.log("DEBUG", "Getting rateplan history for contract " + $contractNumber);
+		// will only validate rule if some rateplan history was found
+		if (rateplanVO != null) {
+			List tmcodes = rateplanVO.getTMCodes($startDate, $endDate);
+			if (tmcodes != null) {
+				GlobalForLog.log("DEBUG", "Checking rateplan list from " + $startDate + " until " + $endDate);
+				boolean foundCombination = false;
+				// searching for a valid combination between rateplan and package
+				for (Iterator it = tmcodes.iterator(); it.hasNext() && (!foundCombination); ) {
+					int tmcode = ((Integer) it.next()).intValue();
+					GlobalForLog.log("DEBUG", "Checking rateplan " + tmcode + " for package " + $package);
+					packagesByPlansCache.refreshCache($request.getTransactionId());
+					foundCombination = foundCombination ||
+					               (packagesByPlansCache.getFromCache(PackagesByPlansVO.createAlternateKey(tmcode, $carrierState, $package)) != null);
+				}
+				// if no combination was found, then built consequence
+				if (!foundCombination) {
+					GlobalForLog.log("DEBUG", "No combination for contract's " + $contractNumber + " rateplans and package " + $package +  " was found");
+
+					consequenceBuilder.setRule("R28-1","Pacote incompatível com plano");
+					consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+					consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+					consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+					consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+					consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+					TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+					c.setDescription("Este pacote não é permitido para o plano do contrato.");
+					c.addAttribute("Número do Contrato", $contractNumber);
+					c.addAttribute("Número do Acesso", $dirNumber);
+					c.addAttribute("Nome do Plano", $rateplan);
+					c.addAttribute("Nome do Pacote", $package);
+
+					results.add(c);
+				}
+			}
+		}
+
+
+end

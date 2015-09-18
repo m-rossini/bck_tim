@@ -1,0 +1,128 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Receipt;
+import br.com.auster.billcheckout.thresholds.OCCThreshold;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+import br.com.auster.tim.om.invoice.TIMReceiptDetail;
+
+import java.util.Collection;
+import java.util.Iterator;
+
+global br.com.auster.billcheckout.model.ModelLoader modelLoader;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+
+rule "Regra R27.1 - Find thresholds"
+	salience 70
+	when
+		$occ : GroupItemReceiptDetail( OCC == true,
+									   $totalAmount : totalAmount
+									 )
+
+		$occGroup : TIMReceiptDetail( receiptGroupItems contains $occ )
+
+		$nf : Receipt ( $carrierCode : carrierCode,
+		                $carrierState : carrierState,
+		                details contains $occGroup )
+
+	then
+		Collection thresholdList = modelLoader.getFromCache(OCCThreshold.class);
+		if (thresholdList != null) {
+			for (Iterator it = thresholdList.iterator(); it.hasNext(); ) {
+				assert(it.next());
+			}
+		}
+end
+
+
+rule "Regra R27.1 - Validate lower limit threshold"
+	salience 50
+	when
+		$occ : GroupItemReceiptDetail( OCC == true,
+									   $totalAmount : totalAmount,
+									   $occDescription : caption
+									 )
+
+		$occGroup : TIMReceiptDetail( receiptGroupItems contains $occ )
+
+		Receipt ( $carrierCode : carrierCode,
+		          $carrierState : carrierState,
+		          details contains $occGroup,
+		          $nfNumber : receiptNbr )
+
+
+		OCCThreshold ( carrierCode == $carrierCode,
+		               carrierState == $carrierState,
+		               lowerAmountSet == true,
+		               $thesholdLimit : lowerAmount > $totalAmount
+		             )
+	then
+		consequenceBuilder.setRule("R27-1","OCC com limite valor excedido");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("OCC com valor abaixo ao limite inferior.");
+		c.addAttribute("OCC", $occDescription);
+		c.addAttribute("Número da NF", $nfNumber);
+		c.addAttribute("Valor Encontrado", $totalAmount);
+		c.addAttribute("Limite Estipulado", $thesholdLimit);
+		results.add(c);
+
+end
+
+rule "Regra R27.1 - Validate upper limit threshold"
+	salience 50
+	when
+		$occ : GroupItemReceiptDetail( OCC == true,
+									   $totalAmount : totalAmount,
+									   $occDescription : caption
+									 )
+
+		$occGroup : TIMReceiptDetail( receiptGroupItems contains $occ )
+
+		Receipt ( $carrierCode : carrierCode,
+		          $carrierState : carrierState,
+		          details contains $occGroup,
+		          $nfNumber : receiptNbr )
+
+
+		OCCThreshold ( carrierCode == $carrierCode,
+		               carrierState == $carrierState,
+		               upperAmountSet == true,
+		               $thesholdLimit : upperAmount < $totalAmount
+		             )
+	then
+		consequenceBuilder.setRule("R27-1","OCC com limite valor excedido");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("OCC com valor acima ao limite superior.");
+		c.addAttribute("OCC", $occDescription);
+		c.addAttribute("Número da NF", $nfNumber);
+		c.addAttribute("Valor Encontrado", $totalAmount);
+		c.addAttribute("Limite Estipulado", $thesholdLimit);
+		results.add(c);
+
+end

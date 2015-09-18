@@ -1,0 +1,214 @@
+#created on: Apr 7, 2009
+#author anardo
+package br.com.auster.tim.billchekout;
+
+#list any import classes here.
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.billcheckout.consequence.DimensionCache;
+import java.util.Date;
+
+import br.com.auster.tim.om.invoice.FreeUnitsReceiptDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.om.invoice.Section;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+
+import br.com.auster.om.util.UnitCounter;
+
+import br.com.auster.tim.billcheckout.param.PackageVO;
+import br.com.auster.tim.billcheckout.param.ContractServicesPeriodVO;
+import br.com.auster.tim.billcheckout.param.UsageGroupVO;
+import br.com.auster.tim.billcheckout.param.ServicesVO;
+import br.com.auster.common.lang.NamedHashMap;
+import java.util.Collection;
+import java.util.Iterator;
+
+#declare any global variables here
+global br.com.auster.tim.billcheckout.param.PackageCache packageCache;
+global br.com.auster.tim.billcheckout.param.UsageGroupCache usageGroupCache;
+global br.com.auster.tim.billcheckout.param.ContractServicesPeriodCache contractServicesPeriodCache;
+global br.com.auster.tim.billcheckout.param.ServicesCache servicesAlternateCache;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+function TelcoConsequence buildR30Consequence(DimensionCache dimensionCache, TelcoConsequenceBuilder consequenceBuilder, 
+		 String carrierCode, String carrierState, String custCode, String contractNumber, String groupName, 
+		 String duracion, Double amount, String valueExpected, String description, Date dateEnabled, Date dateDisabled) {
+		
+		consequenceBuilder.setRule("R30-1","Aplicação Pct Ilimitado de Dados");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache(carrierCode));
+	
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription(description); 
+		c.addAttribute("Estado", carrierState);
+		c.addAttribute("Código do Cliente", custCode);
+		c.addAttribute("Número do Contrato", contractNumber);
+		c.addAttribute("Seção da Conta", groupName);
+		c.addAttribute("Duração da Chamada", duracion);
+		c.addAttribute("Valor apresentado", amount);
+		c.addAttribute("Valor esperado", valueExpected);
+		c.addDateAttribute("Data da ativação", dateEnabled);
+		c.addDateAttribute("Data da expiração", dateDisabled);
+		
+		return c;
+}
+
+#Criando Map de contrato/periodo para um pacote
+rule "Regra 30-MAP"
+salience 90
+when
+	not ( NamedHashMap(name == "package") )
+then
+	NamedHashMap mapPack = new NamedHashMap("package");
+	assert(mapPack);
+end
+
+#Mapeando contrato que tenham pacote com flag ativa e seu período correspondente
+rule "Regra 30-INIT"
+salience 80
+	when
+		$pack : NamedHashMap( name == "package" )
+		$furd : FreeUnitsReceiptDetail ( tag == "34000100" )
+	then
+	
+		PackageVO packVO = (PackageVO) packageCache.getFromCache(PackageVO.createAlternateKey($furd.getServiceId()));
+		if (packVO != null){
+			#Mapeando contratos que tenham pacote ativo
+			if ("T".equals(packVO.getCustom1())){
+				$pack.put($furd.getContractNumber(), null);
+				
+				ContractServicesPeriodVO ctrServPeriodVO = (ContractServicesPeriodVO) contractServicesPeriodCache.getFromCache(
+													ContractServicesPeriodVO.createAlternateKey($furd.getContractNumber(),"749"));		
+				
+				if (null != ctrServPeriodVO){
+					#Mapeado o contrato que têm flag e VO do período
+					$pack.put($furd.getContractNumber(), ctrServPeriodVO);
+				}
+			}
+		}
+end
+
+/*	Cenario 1:
+	- contrato possui pelo menos um pacote com flag ativa
+	- existe um periodo de ativação para o serviço - Query 1
+	- validar SOMENTE as seções de DADOS, onde possui a flag ativa no DB
+	- validar o periodo de ativação com a data da fatura (inicio e fim de corte)
+	- se a chamada estiver dentro do periodo ativo, criticar, pois nao deveria ser cobrada
+*/
+rule "R30-1"
+salience 50
+	when
+		$account : Account( $carrierCode : carrierCode, 
+							$carrierState : carrierState,
+							$custCode : accountNumber
+						  )
+						  
+		$invoice : Invoice ( $endDate : cycleEndDate,
+				  			 $startDate : cycleStartDate
+							)
+		$section : ContractUsageGroupSubsection( tag == "51100000",
+							unitType == "DATA", #somente seção de dados
+							$groupName : sectionName
+		    	   )
+		    	   
+		$contractInfo : ContractInfoSection( subSections contains $section,
+							$contractNumber : contractNumber
+							)
+		
+		$pack : NamedHashMap( name == "package" )
+	then
+	
+		#Contrato contém pacote com flag ativa e período existente, no DB 
+		if ($pack.containsKey($contractNumber) && (null != $pack.get($contractNumber)) ){
+		
+			UsageGroupVO usageGroupVO = (UsageGroupVO) usageGroupCache.getFromCache(UsageGroupVO.createAlternateKey($groupName));
+			#Existe a seção na QLF_USAGE_GROUP e está ativa a flag
+			if (null != usageGroupVO && "T".equals(usageGroupVO.getCustom1())){
+				#Pega o VO do periodo, mapeado, comparando o periodo ativo com a data da fatura
+				ContractServicesPeriodVO ctrServsPerVO = (ContractServicesPeriodVO) $pack.get($contractNumber);
+				if ((ctrServsPerVO.getActivationDate() != null && ctrServsPerVO.getActivationDate().before($endDate)) &&
+				    (ctrServsPerVO.getExpirationDate() == null || ctrServsPerVO.getExpirationDate().after($startDate)) &&
+				    ($section.getTotalAmount() > 0)) {
+				   	
+				   	#Gerando a critica do Cenario 1
+					results.add(buildR30Consequence(dimensionCache, consequenceBuilder, $carrierCode, $carrierState, $custCode,
+								$contractNumber, $groupName, "", new Double ($section.getTotalAmount()),
+								"0,00", "Cobrança indevida de dados com Pacote Ilimitado", ctrServsPerVO.getActivationDate(),
+								ctrServsPerVO.getExpirationDate()));
+				}
+			}
+		}
+end
+
+/*	Cenario 2:
+	- contrato não possui pacote ativo, conforme definição de pacote inativo na ET
+	- não existe comparação de datas
+	- validar todas as seções de dados(flag ativa e inativa) do contrato sem pacote ativo
+	- não existe detalhamento de uso
+	- se no sumario tiver consumo de dados e valor zerado, criticar, pois nao existe um pacote ativo
+
+	Cenario 3:
+	- contrato possui pelo menos um pacote com flag ativa
+	- existe um periodo de ativação para o serviço - Query 1
+	- não existe comparação de datas com o período
+	- validar SOMENTE as seções de DADOS, onde não possui a flag ativa no DB
+	- não existe detalhamento de uso (Sem 51110000 e 51110010)
+	- se no sumario tiver consumo de dados e valor zerado, criticar, pois nao deveria ser beneficiada
+*/
+rule "R30-2-3"
+salience 50
+	when
+		$account : Account( $carrierCode : carrierCode, 
+							$carrierState : carrierState,
+							$custCode : accountNumber
+						  )
+		$section : ContractUsageGroupSubsection( tag == "51100000",
+							unitType == "DATA",
+							$groupName : sectionName,
+							$details : details,
+							$totalAmount : totalAmount == 0, 
+							$usedVolume : usedVolume -> ($usedVolume.getUnits() > 0)
+		    	   )
+		$contractInfo : ContractInfoSection( subSections contains $section,
+							$contractNumber : contractNumber
+							)
+		$pack : NamedHashMap( name == "package" )
+		eval ( $details.isEmpty() ) #não pode haver detalhamento de uso
+	then
+	
+		#Contrato contém pacote com flag ativa e período existente no DB 
+		if ($pack.containsKey($contractNumber) && (null != $pack.get($contractNumber)) ){
+			UsageGroupVO usageGroupVO = (UsageGroupVO) usageGroupCache.getFromCache(UsageGroupVO.createAlternateKey($groupName));
+			#Se seção não existir na tabela OU existe registro da seção e sua Custom_1 não está ativa
+			if (null == usageGroupVO || (null != usageGroupVO && !"T".equals(usageGroupVO.getCustom1()))){
+				ContractServicesPeriodVO ctrServsPerVO = (ContractServicesPeriodVO) $pack.get($contractNumber);
+				#Criticando Cenario 3
+				results.add(buildR30Consequence(dimensionCache, consequenceBuilder, $carrierCode, $carrierState, $custCode,
+								$contractNumber, $groupName, $usedVolume.toString(), $totalAmount,
+								"Maior que zero", "Aplicação Indevida do Pacote Ilimitado para serviço de dados",
+								ctrServsPerVO.getActivationDate(), ctrServsPerVO.getExpirationDate()));
+			}
+		}else{
+			#Criticando Cenario 2
+			results.add(buildR30Consequence(dimensionCache, consequenceBuilder, $carrierCode, $carrierState, $custCode,
+								$contractNumber, $groupName, $usedVolume.toString(), $totalAmount,
+								"Maior que zero", "Aplicação Indevida de Pacote Ilimitado sem estar ativado",
+								null, null));
+		}
+end
+

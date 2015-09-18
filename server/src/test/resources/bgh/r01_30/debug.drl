@@ -1,0 +1,50 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.om.util.ParserUtils;
+import br.com.auster.om.util.UnitCounter;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.om.invoice.Identity;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.FreeUnitsReceiptDetail;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.UsageFUDetail;
+import br.com.auster.tim.billcheckout.param.PlansVO;
+import br.com.auster.common.lang.NamedHashMap;
+import br.com.auster.common.lang.NamedDouble;
+import br.com.auster.tim.billcheckout.npack.NPackOCCDescription;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.tim.billcheckout.npack.NPackPackageInfoVO;
+import br.com.auster.tim.billcheckout.crashprogram.CostCenterVO;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+global br.com.auster.tim.billcheckout.param.PlansCache plansCache;
+global br.com.auster.tim.billcheckout.npack.NPackPackageInfoCache npackInfoCache;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+
+rule "R01.30 - debugging"
+	salience 70
+	when
+		$resolver : NPackOCCDescription ( $occDescription : finalString )
+		
+		GroupItemReceiptDetail( OCC == true, $occText : caption ) 
+
+	then
+		GlobalForLog.log("INFO", "Comparing '" + $occDescription +  "' with '" + $occText + "' : " + ($occText.equals($occDescription))); 
+end
+

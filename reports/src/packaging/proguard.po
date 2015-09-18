@@ -1,0 +1,94 @@
+
+-injars "@[user.dir]@/target/classes"
+-injars "@[auster:auster-commons-base]@"(!br/com/auster/**/test/**,!br/com/auster/common/security/ResourceReady.class,!br/com/auster/common/rules/**,!br/com/auster/common/lang/**)
+-injars "@[auster:minerva-core]@"(!br/com/auster/**/test/**)
+-injars "@[auster:minerva-billcheckout]@"(!br/com/auster/**/test/**, !br/com/auster/minerva/billcheckout/report/BillcheckoutRequest.class)
+
+
+# Output file  
+-outjars "@[tim:tim-billcheckout-report]@"
+
+-libraryjars "@[javax.jms:jms]@"               
+-libraryjars "@[commons-dbcp:commons-dbcp]@"
+-libraryjars "@[auster:minerva-interfaces]@"(!br/com/auster/**/test/**)
+-libraryjars "@[java.home]@/lib/rt.jar"
+	  
+# proguard debugging files/options
+# -printseeds proguard_seeds.txt
+# -printusage proguard_deadcode.txt
+-verbose
+
+# execution settings
+# -dontobfuscate
+# -dontshrink
+# -dontoptimize
+-overloadaggressively
+
+# provides useful stack traces 
+ -printmapping .proguard.mapping
+# -applymapping .proguard.mapping
+-renamesourcefileattribute SourceFile
+-keepattributes InnerClasses,SourceFile,LineNumberTable,Deprecated,Signature
+
+################################################## 
+# SHARED KEEPS                                   # 
+################################################## 
+
+-keepclasseswithmembers class **.res.*
+
+-keep class * extends java.lang.Exception {
+	public <init>();
+	public <init>(**);
+} 
+
+################################################## 
+# COMMONS                                        # 
+################################################## 
+
+-keep class br.com.auster.common.security.Encryptor {
+	public static void main(java.lang.String[]);
+}
+
+-keep class br.com.auster.common.sql.SecureDriverManagerConnectionFactory {
+	<init>(java.lang.String, java.lang.String, java.lang.String);
+	<init>(java.lang.String, java.util.Properties);
+}
+
+################################################## 
+# MINERVA CORE                                   # 
+################################################## 
+
+-keep class br.com.auster.minerva.Bootstrap {
+	public static void main(java.lang.String[]);
+}
+
+-keep class br.com.auster.minerva.core.ListenerThread {
+	public *;
+}
+-keep class br.com.auster.minerva.core.DispatcherThread {
+	public *;
+}
+
+-keep interface br.com.auster.minerva.core.* {
+	public <methods>;
+}
+-keep interface * extends br.com.auster.minerva.core.*
+-keep class * implements br.com.auster.minerva.core.*
+
+-keep class br.com.auster.minerva.csv.report.AbstractCSVReport {
+	public <methods>;
+}
+-keep class * extends br.com.auster.minerva.csv.report.AbstractCSVReport {
+	public <methods>;
+}
+
+
+################################################## 
+# MINERVA BILLCHECKOUT                           # 
+################################################## 
+
+-keep interface br.com.auster.minerva.billcheckout.report.DatabaseReport {
+	public <methods>;
+}
+-keep class * implements br.com.auster.minerva.billcheckout.report.DatabaseReport
+

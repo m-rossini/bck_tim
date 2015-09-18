@@ -1,0 +1,75 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.PaystubSection;
+
+import br.com.auster.tim.billcheckout.util.ICMSHashGenerator;
+
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+rule "Regra 09.4 - Step 1 - Find Automatic Debits" 
+	salience 70	 
+	when
+		Account ( $custcode : accountNumber,
+				  $carrierCode : carrierCode )
+		
+		PaystubSection ( $authInd : directDebitIndicator -> ($authInd.equals("D")),
+						 $authInfo : directDebitInfo -> ($authInfo != null) )
+	then
+		String finalCustCode = ICMSHashGenerator.removeNonNumericChars($custcode);
+		finalCustCode = ICMSHashGenerator.paddleWithZeros(finalCustCode, 17);
+		if (($authInfo.length() < finalCustCode.length()) || (!$authInfo.startsWith(finalCustCode))) {
+			consequenceBuilder.setRule("R09-4","Erro código débito automático"); 
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+	 
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription("O custcode do cliente não está presente no código de débito automático.");
+			c.addAttribute("Custcode", $custcode);
+			c.addAttribute("Indicator de Deb. Automático", $authInd);
+			c.addAttribute("Autorização de Deb. Automático", $authInfo);
+			results.add(c);
+		}
+end
+
+
+ rule "Regra 09.4 - Step 2 - Find Automatic Debits" 
+	salience 70	 
+	when
+		Account ( $custcode : accountNumber,
+				  $carrierCode : carrierCode )
+		
+		PaystubSection ( $authInd : directDebitIndicator -> ($authInd.equals("D")),
+						 $authInfo : directDebitInfo -> ($authInfo == null) )
+	then
+		consequenceBuilder.setRule("R09-4","Erro código débito automático"); 
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));		
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));		
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));				
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+	 
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("O indicador de débito automático foi encontrado mas o campo com os dados para débito está vazio.");
+		c.addAttribute("Custcode", $custcode);
+		c.addAttribute("Indicator de Deb. Automático", $authInd);
+		c.addNullAttribute("Autorização de Deb. Automático");
+		results.add(c);
+end

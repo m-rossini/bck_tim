@@ -1,0 +1,68 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.common.lang.NamedDouble;
+
+global java.util.List results;
+
+
+
+rule "Regra R04.3 - Adding custCodeWithSlashes attribute"
+	salience 90
+	when
+		Account ( accountType == "L", $custCode : accountNumber )
+	then
+		assert(new NamedDouble($custCode + "-credit"));
+		assert(new NamedDouble($custCode + "-debit"));
+end
+
+
+
+rule "Regra R04.3 - Colecting CredCorp Debit OCCs"
+	salience 70
+	when
+
+		$occ : GroupItemReceiptDetail( OCC == true,
+									   $totalAmount : totalAmount,
+									   $description : caption -> ( ($description.indexOf("CredCorp") > 0) && (! $description.startsWith("Desconto")) )
+									 )
+
+		Account ( accountType == "L", $custCode : accountNumber )
+
+		$debit : NamedDouble( $name : name -> ($name.equals($custCode + "-debit")) )
+	then
+		$debit.addTo($totalAmount.doubleValue());
+end
+
+rule "Regra R04.3 - Colecting CredCorp Credit OCCs"
+	salience 70
+	when
+
+		$occ : GroupItemReceiptDetail( OCC == true,
+									   $totalAmount : totalAmount,
+									   $description : caption -> ($description.startsWith("Desconto CredCorp"))
+									 )
+
+		Account ( accountType == "L", $custCode : accountNumber )
+
+		$credit : NamedDouble( $name : name -> ($name.equals($custCode + "-credit")) )
+	then
+		$credit.addTo($totalAmount.doubleValue());
+end
+
+
+rule "Regra R04.3 - Saving CredCorp amounts"
+	salience 50
+	when
+		Account ( accountType == "L", $custCode : accountNumber )
+
+		$debit : NamedDouble( $name : name -> ($name.equals($custCode + "-debit")) )
+
+		$credit : NamedDouble( $name : name -> ($name.equals($custCode + "-credit")) )
+	then
+		if (($credit.getValue() < 0) || ($debit.getValue() > 0)) {
+			results.add($credit);
+			results.add($debit);
+		}
+end

@@ -1,0 +1,71 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Identity;
+
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+
+import br.com.auster.tim.billcheckout.rules.duplicity.TIMDuplicityHandler;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+rule "Regra 1-9B"
+	salience 0
+	when
+	    #gets the contract section that contais the subsection (Parent of the subsection)
+		$contract : ContractInfoSection(
+			$contractNo : contractNumber,
+			$accessNumber : accessNbr )
+
+		#gets the usage attached to above subsection and contract section with
+		# the business condition
+		$usage : TIMUsageDetail(
+			$date : usageDate,
+			$time : usageTime,
+			$dur : usageDuration,
+			$svc : serviceDescription,
+			$calling : channelId -> ($accessNumber == $calling),
+			$called : calledNumber,
+			$flags : guidingFlags -> ( $flags.isLate() )
+			)
+
+		Identity ( $accNo : identityAttrib1, identityType == "customerID")
+
+	    Account( $carrierCode : carrierCode )
+
+		eval( TIMDuplicityHandler.isDuplicated($accNo, $contractNo, $usage) )
+
+	then
+		consequenceBuilder.setRule("R04-5","Uso Duplicado entre ciclos");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+		TelcoConsequence cd = (TelcoConsequence) consequenceBuilder.getConsequence();
+		cd.setDescription("Detalhes de Uso Duplicados entre Ciclos");
+
+		cd.addAttribute("Número do Contrato", $contractNo);
+		cd.addAttribute("Número de Acesso", $accessNumber);
+		cd.addAttribute("Número Chamado", $called);
+		cd.addAttribute("Serviço", $svc);
+		cd.addDateAttribute("Data da Chamada", $date);
+		cd.addTimeAttribute("Hora da Chamada", $time);
+		cd.addAttribute("Duração da Chamada", $dur);
+		results.add(cd);
+end

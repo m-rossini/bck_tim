@@ -1,0 +1,141 @@
+package br.com.auster.tim.billchekout;
+
+import java.lang.Double;
+import java.util.Map;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+import br.com.auster.common.lang.NamedHashMap;
+
+import br.com.auster.tim.billcheckout.param.OCCContractBreakVO;
+import br.com.auster.tim.billcheckout.param.CBCFContractVO;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global br.com.auster.tim.billcheckout.param.OCCContractBreakCache OCCDescriptions;
+global br.com.auster.tim.billcheckout.param.CBCFContractDAO CBCFInterface;
+global java.util.List results;
+
+
+
+
+rule "R24.1 - Load CBCF Info for Invoice"
+	salience 90
+	when
+		$account : Account(  )
+
+		Invoice ( $startDate : cycleStartDate ,
+		          $endDate : cycleEndDate
+		        )
+
+	then
+		Map info = CBCFInterface.getCBCFCustomerList( $account.getIdentity("customerID").getIdentityAttrib1(), $startDate, $endDate );
+		if ((info != null) && (info.size() > 0)){
+			NamedHashMap nhp = new NamedHashMap("R24-1");
+			nhp.put("info", info);
+			assert(nhp);
+		}
+end
+
+
+rule "R24.1 - Checking Contract Break OCCs"
+	salience 80
+	when
+
+		$account : Account( $carrierCode : carrierCode )
+
+		$occ : GroupItemReceiptDetail( OCC == true,
+									   $description : caption,
+									   $totalAmount : totalAmount,
+									   $occEvents : eventCount
+									  )
+
+		not ( NamedHashMap( name == "R24-1" )
+		     )
+
+		eval (OCCDescriptions.getFromCache(OCCContractBreakVO.createKey($description)) != null)
+
+	then
+		consequenceBuilder.setRule("R24-1","Aplicação Multa CBCF");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Quebra de fidelização cobrada indevidamente.");
+		c.addAttribute("Descrição OCC", $description);
+		c.addAttribute("Valor OCC", $totalAmount);
+		c.addAttribute("Quantidade de Eventos", $occEvents);
+		c.addAttribute("Valor esperado", "n/a");
+		results.add(c);
+end
+
+
+
+rule "R24.1 - Checking Contract Break Amounts"
+	salience 80
+	when
+
+		$account : Account( $carrierCode : carrierCode )
+
+		$occ : GroupItemReceiptDetail( OCC == true,
+									   $description : caption,
+									   $totalAmount : totalAmount,
+									   $occEvents : eventCount
+									  )
+
+		$map : NamedHashMap( name == "R24-1" )
+
+		eval (OCCDescriptions.getFromCache(OCCContractBreakVO.createKey($description)) != null)
+
+	then
+		Map info = (Map) $map.get("info");
+		if (info != null) {
+			if (!info.containsKey($totalAmount)) {
+				consequenceBuilder.setRule("R24-1","Aplicação Multa CBCF");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+				c.setDescription("Valor da quebra de fidelização não confere.");
+				c.addAttribute("Descrição da OCC", $description);
+				c.addAttribute("Valor da OCC", $totalAmount);
+				c.addAttribute("Quantidade de Eventos", $occEvents);
+				c.addAttribute("Valor esperado", "n/a");
+				results.add(c);
+
+			} else if ( ((Double)info.get($totalAmount)).doubleValue() != $occEvents.doubleValue() ) {
+				consequenceBuilder.setRule("R24-1","Aplicação Multa CBCF");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+				c.setDescription("Quantidade de eventos da quebra de fidelização não confere.");
+				c.addAttribute("Descrição da OCC", $description);
+				c.addAttribute("Valor da OCC", $totalAmount);
+				c.addAttribute("Quantidade de Eventos", $occEvents);
+				c.addAttribute("Valor esperado", info.get($totalAmount));
+				results.add(c);
+			}
+		}
+end

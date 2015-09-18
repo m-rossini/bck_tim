@@ -1,0 +1,106 @@
+package br.com.auster.tim.billchekout;
+
+import java.lang.Math;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.om.invoice.Receipt;
+import br.com.auster.om.invoice.Section;
+import br.com.auster.tim.om.invoice.TIMReceiptDetail;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+
+import br.com.auster.common.lang.NamedDouble;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+global java.util.List results;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+
+/**
+ * RULES #17.2 and 17.3: Validates Total Invoice Amount against All Receipts
+ TIM Receipt + SUM(LDC Receipts) == Total Invoice Amount
+ */
+
+ /***
+ 	Creates a NamedDouble to hold the invoice amount for current account
+ */
+rule "Regra 17-2A"
+	salience 70
+	when
+		$acc : Account( $accNo : accountNumber )
+		$inv : Invoice( $amtinv : totalAmount )
+		not NamedDouble( $name : name -> ($name.equals("17.2" + $accNo) ))
+	then
+		assert(new NamedDouble("17.2"+$accNo,$amtinv.doubleValue()));
+end
+
+/*
+	For each receipt found, subtracts from the total amount found previously in the invoice
+*/
+rule "Regra 17-2B"
+	salience 50
+	when
+		Account ( $accNo : accountNumber )
+		Receipt( $amtnf : totalAmount )
+		$named : NamedDouble( $name : name -> ($name.equals("17.2" + $accNo) ))
+	then
+		$named.subtractFrom($amtnf.doubleValue());
+end
+
+/*
+	For each receipt found, subtracts from the total amount found previously in the invoice
+*/
+rule "Regra 17-2B- Individual NF"
+	salience 50
+	when
+		Account( $accNo : accountNumber )
+		Section ( sectionName == "IndividualNotaFiscal",
+			      $amtSection : totalAmount )
+		not( Receipt() )
+		$named : NamedDouble( $name : name -> ($name.equals("17.2" + $accNo) ))
+	then
+		$named.subtractFrom($amtSection.doubleValue());
+end
+/*
+ For each NamedDouble where the total amount found at step 1 is different from ZERO MINUS/PLUS a range, create a consequence
+*/
+rule "Regra 17-2C"
+	salience 0
+	when
+		Invoice( $amtinv : totalAmount )
+		Account( $carrierCode : carrierCode,
+		         $accNo : accountNumber )
+		$named : NamedDouble( $name : name -> ($name.equals("17.2" + $accNo) ), $value : value )
+	then
+		if ($value.doubleValue() != 0) {
+			double limit = 0.001;
+			double calc = (Math.abs($value.doubleValue()) + limit);
+			if ( (calc-Math.abs($value.doubleValue()) ) != limit) {
+				consequenceBuilder.setRule("R17-2","Valor NF não confere com fatura");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+				c.setDescription("Valor da fatura diverge da soma dos valores das NFs");
+
+		        c.addDoubleAttribute("Valor da Fatura", $amtinv.doubleValue());
+				c.addDoubleAttribute("Total das NFs", ($amtinv.doubleValue() - $value.doubleValue()));
+
+		        results.add(c);
+			}
+		}
+end

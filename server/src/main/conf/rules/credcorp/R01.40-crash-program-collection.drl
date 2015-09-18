@@ -1,0 +1,117 @@
+#created on: 25/10/2007
+package br.com.auster.tim.billchekout
+
+#list any import classes here.
+import java.util.Iterator;
+import java.util.LinkedList;
+
+import br.com.auster.tim.bgh.sax.BGHDataFormats;
+import br.com.auster.om.util.UnitCounter;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.common.lang.NamedHashMap;
+import br.com.auster.tim.om.invoice.FreeUnitsReceiptDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.billcheckout.crashprogram.CrashProgramCustCodesVO;
+import br.com.auster.tim.billcheckout.crashprogram.CrashProgramPackageInfoVO;
+import br.com.auster.tim.billcheckout.param.PlansVO;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+global br.com.auster.tim.billcheckout.crashprogram.CrashProgramPackageInfoCache crashPackageInfoCache;
+global br.com.auster.tim.billcheckout.crashprogram.CrashProgramCustCodesCache crashCustCodesCache;
+global br.com.auster.tim.billcheckout.param.PlansCache planCache;
+global java.util.List results;
+
+
+
+
+
+
+rule "Regra 01.40 - build named hash map if account is eligible"
+	salience 90
+	when
+
+		Account( $custCode : accountNumber,
+				 $carrierState : carrierState )
+
+		not ( NamedHashMap( $name : name -> (("R01.40-collection-"+$custCode).equals($name)) ) )
+
+		eval ( crashCustCodesCache.getFromCache( CrashProgramCustCodesVO.createKey(getRootCustCode($custCode)) ) != null ) 
+	then	
+		NamedHashMap nhm = new NamedHashMap("R01.40-collection-"+$custCode);
+		assert(nhm);
+end
+
+
+rule "Regra 01.40 - summarize fu for eligible account"
+	salience 80
+	when
+
+		Account( $custCode : accountNumber,
+				 $carrierState : carrierState )
+
+		$nhm : NamedHashMap( $name : name -> (("R01.40-collection-"+$custCode).equals($name)) )
+
+		FreeUnitsReceiptDetail( tag == "34000100",
+						        $packageName : serviceId,
+						        $contractNumber : contractNumber,
+						        $unitCounter : unitCount )
+
+		ContractInfoSection ( contractNumber == $contractNumber,
+							  $rateplan : ratePlan )
+
+		eval ( crashCustCodesCache.getFromCache( CrashProgramCustCodesVO.createKey(getRootCustCode($custCode)) ) != null ) 
+	then
+
+	UnitCounter uc = BGHDataFormats.buildUnitCounter($unitCounter);
+	// will only proceed if package is based on minutes
+	if (uc.getType().equals(UnitCounter.TIME_COUNTER)) {
+		PlansVO planVo = (PlansVO) planCache.getFromCache( PlansVO.createAlternateKey($rateplan, $carrierState) );
+		if (planVo != null) {
+			CrashProgramPackageInfoVO packageInfoVo = (CrashProgramPackageInfoVO) crashPackageInfoCache.getFromCache( 
+			                                CrashProgramPackageInfoVO.createKey( String.valueOf(planVo.getTmCode()), $packageName ) );
+			GlobalForLog.log("INFO", "Getting packageInfo " + packageInfoVo + " for " + planVo.getTmCode() + "/" + $packageName);
+			if (packageInfoVo != null) {				
+				Iterator it = packageInfoVo.getCsgCodeList().iterator();			
+				while (it.hasNext()) {
+					String csgCode = (String) it.next();
+					if (!$nhm.containsKey(csgCode)) {
+						$nhm.put(csgCode, new UnitCounter(UnitCounter.TIME_COUNTER) );
+						$nhm.put(csgCode + ".tmcodes", new LinkedList()); 
+					}				
+					UnitCounter current = (UnitCounter) $nhm.get(csgCode);
+					current.addUnits(uc.getUnits());
+					// saving tmcode
+					((LinkedList)$nhm.get(csgCode + ".tmcodes")).add( String.valueOf(planVo.getTmCode()) );
+				}
+			}
+		} 
+	}
+
+end
+
+
+rule "Regra 01.40 - persiste sum built in the previous rule"
+	salience 70
+	when
+
+		Account( $custCode : accountNumber,
+				 $carrierState : carrierState )
+
+		$nhm : NamedHashMap( $name : name -> (("R01.40-collection-"+$custCode).equals($name)) )
+
+		eval ( crashCustCodesCache.getFromCache( CrashProgramCustCodesVO.createKey(getRootCustCode($custCode)) ) != null ) 
+	then	
+		results.add( $nhm );
+end
+
+
+function String getRootCustCode(String _custCode) {
+
+	String rootCustCode = _custCode;
+	int idx = _custCode.indexOf(".", _custCode.indexOf(".")+1);
+	if (idx > 0) {
+		rootCustCode = new String(_custCode.substring(0, idx));
+	}
+	return rootCustCode;
+}

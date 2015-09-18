@@ -1,0 +1,220 @@
+package br.com.auster.tim.billchekout
+
+#list any import classes here.
+import br.com.auster.om.util.ParserUtils;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Identity;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.om.util.UnitCounter;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.UsageFUDetail;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+
+import br.com.auster.tim.billcheckout.npack.NPackOCCDescription;
+
+import br.com.auster.tim.billcheckout.npack.NPackRateVO;
+import br.com.auster.tim.billcheckout.npack.NPackPackageInfoVO;
+import br.com.auster.tim.billcheckout.param.PlansVO;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+
+global br.com.auster.tim.billcheckout.param.PlansCache plansCache;
+global br.com.auster.tim.billcheckout.npack.NPackPackageInfoCache npackInfoCache;
+global br.com.auster.tim.billcheckout.npack.NPackRateCache npackRateCache;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+
+rule "Regra 01.30 - check if account is eligible"
+	salience 90
+	when
+		$id : Identity ( identityType == "customerID", 
+		                 $custid: identityAttrib1  )
+
+		Account ( $custCode : accountNumber, 
+		          $ids : identities -> ($ids.containsValue($id)) ) 
+
+		Invoice ( $initDate : cycleStartDate )  
+
+		not ( NPackPackageInfoVO( customerId == $custid) )
+		
+		eval( npackInfoCache.getFromCache( NPackPackageInfoVO.createKey($custid, $initDate) ) != null )
+
+	then
+	
+		NPackPackageInfoVO vo = (NPackPackageInfoVO) npackInfoCache.getFromCache( NPackPackageInfoVO.createKey($custid, $initDate) );
+		assert(vo);
+end
+
+
+rule "Regra 01.30 - accumulate usage by contract"
+	salience 90
+	when
+	
+		$npackInfo : NPackPackageInfoVO( $allPlans : allPlans,
+		                                 $packageName : packageName )
+
+		ContractInfoSection( $coid : contractNumber,
+							 $accessNumber : accessNbr,
+		                     $ratePlan : ratePlan ) 
+		                   
+		$fuDetail : UsageFUDetail( packageLongDescription == $packageName,
+								   $fuVolume : reductionVolume )
+		
+		TIMUsageDetail( freeUnitDetails contains $fuDetail,
+						contractNumber == $coid )
+		
+		Account( $accountState : carrierState )
+		
+	then
+		PlansVO vo = (PlansVO) plansCache.getFromCache( PlansVO.createAlternateKey($ratePlan, $accountState) );
+		if ((vo != null) && ($allPlans.contains( String.valueOf(vo.getTmCode()) )) ) {
+			$npackInfo.addUsage($accessNumber, $fuVolume);
+		}
+end
+
+
+rule "Regra 01.30 - build occ description by contract"
+	salience 85
+	when
+	
+		$npackInfo : NPackPackageInfoVO( )
+
+	then
+		NPackOCCDescription npackInfo = new NPackOCCDescription();
+		npackInfo.buildOCCDescriptions( $npackInfo.getOCCPattern(), $npackInfo.getContractsAndUsages(), $npackInfo.getTotalMinutes()*60 );
+		assert(npackInfo); 
+end
+
+
+
+rule "Regra 01.30 - check if contract does not have occ"
+	salience 90
+	when
+
+		ContractInfoSection( $coid : contractNumber,
+		                     $accessNumber : accessNbr,
+		                     $rateplan : ratePlan ) 
+
+		$npackOccs : NPackOCCDescription( )
+
+		not ( GroupItemReceiptDetail( OCC == true,
+							          $occDescription : caption -> ($occDescription.equals($npackOccs.getContractOCCDescription($accessNumber)))
+							        ) )
+
+		$npackInfo : NPackPackageInfoVO( )
+		  
+		Account( $carrierCode : carrierCode )
+		
+		eval ( $npackOccs.isContractAccumulated($accessNumber) )
+		
+	then		
+		consequenceBuilder.setRule("R01-30","Cobrança de NPack");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+		
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		
+		c.setDescription("NPack sem cobrança proporcional de minutos.");
+		c.addAttribute("Número do Contrato", $coid);
+		c.addAttribute("Número do Acesso", $accessNumber);
+		c.addAttribute("Plano", $rateplan);
+		c.addAttribute("Pacote", $npackInfo.getPackageName());	
+		UnitCounter uc = $npackInfo.getUsage($accessNumber);
+		c.addAttribute("Volume utilizado", uc);
+		UnitCounter totUc = new UnitCounter(UnitCounter.TIME_COUNTER);
+		totUc.addMinutes($npackInfo.getTotalMinutes());
+		c.addAttribute("Volume total", totUc);
+		c.addNullAttribute("Valor calculado");
+		c.addNullAttribute("Valor faturado");
+				
+		results.add(c);
+		
+end
+
+rule "Regra 01.30 - check if contract's occ is correct"
+	salience 90
+	when
+
+		ContractInfoSection( $coid : contractNumber,
+		                     $accessNumber : accessNbr,
+		                     $rateplan : ratePlan ) 
+
+		$npackOccs : NPackOCCDescription( )
+
+		GroupItemReceiptDetail( OCC == true,
+							    $occDescription : caption -> ($npackOccs.isContractOCCDescription($accessNumber, $occDescription)),
+							    $chargedAmount : totalAmount )
+
+		$npackInfo : NPackPackageInfoVO( )
+		  
+		Account( $carrierCode : carrierCode,
+			     $accountState : carrierState  )
+			     
+		Invoice ( $initDate : cycleStartDate )
+		
+		eval ( $npackOccs.isContractAccumulated($accessNumber) )
+		
+	then		
+		
+		NPackRateVO rate = (NPackRateVO) npackRateCache.getFromCache( NPackRateVO.createKey($rateplan, $accountState, $initDate) );		
+		GlobalForLog.log("INFO", "Got rate? "+ rate);
+		if (rate != null) {
+			UnitCounter uc = $npackInfo.getUsage($accessNumber);
+			double calculatedAmount = uc.getMinutes() * rate.getPriceFor(uc.getUnits());
+			double diff = Math.abs(calculatedAmount - $chargedAmount.doubleValue());
+			boolean isDiff = false;
+			if (diff > 0.010001) {
+				isDiff = true;
+			} else if (diff > 0.007) {
+				// This condition is to validate rounding problems. If difference is greater then 0.007
+				// but bellow 0.010001, then let's check the string version of each value.
+				// This also helps not reporting errors with both calc. and total amount with identical values.
+				isDiff = (! ParserUtils.asDoubleString(Math.abs(calculatedAmount)).startsWith(ParserUtils.asDoubleString(Math.abs($chargedAmount.doubleValue()))) );
+			}
+			
+			GlobalForLog.log("INFO", "Calculated " + calculatedAmount + " != " + $chargedAmount);
+			if (isDiff) {
+			
+				consequenceBuilder.setRule("R01-30","Cobrança de NPack");
+				consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+				consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+				consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+				consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+				consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+				
+				TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+				
+				c.setDescription("Valor proporcional cobrado para este NPack não corresponde ao calculado.");
+				c.addAttribute("Número do Contrato", $coid);
+				c.addAttribute("Número do Acesso", $accessNumber);
+				c.addAttribute("Plano", $rateplan);
+				c.addAttribute("Pacote", $npackInfo.getPackageName());	
+				c.addAttribute("Volume utilizado", uc);
+				UnitCounter totUc = new UnitCounter(UnitCounter.TIME_COUNTER);
+				totUc.addMinutes($npackInfo.getTotalMinutes());
+				c.addAttribute("Volume total", totUc);
+				c.addDoubleAttribute("Valor calculado", calculatedAmount);
+				c.addDoubleAttribute("Valor faturado", $chargedAmount.doubleValue());
+						
+				results.add(c);
+			}
+		}
+end

@@ -1,0 +1,234 @@
+
+
+#created on: 14/09/2007
+package br.com.auster.tim.billchekout;
+
+#list any import classes here.
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.util.UnitCounter;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.billcheckout.param.RoamingAgreeVO;
+import br.com.auster.common.lang.NamedDouble;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+#declare any global variables here
+global br.com.auster.tim.billcheckout.param.RoamingAgreeCache roamingAgreeCache;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+rule "Regra 01.11 - Init Named Doubles"
+	salience 100
+	when
+
+		$section : ContractUsageGroupSubsection( $sectionName : sectionName, $contractNumber : contractNumber )
+
+	then
+
+		assert(new NamedDouble("1.11AccError" + $contractNumber + $sectionName, 0));
+
+end
+
+
+rule "Regra 01.11 - Verifying the voice usage with type != AC"
+
+	salience 90
+
+	when
+
+		$usage : TIMUsageDetail ( totalAmount <= 0,
+								  amountBeforePromotions > 0,
+								  discountAmount <= 0,
+								  voiceUsage == true,
+								  microCellDesc == null,
+								  freeUnitIndicator != "F",
+								  $dur : usageDuration -> ($dur.getSeconds() > 4 && $dur.getType().equals(UnitCounter.TIME_COUNTER)),
+								  type != "AC", type != "AD", type != "DSL",
+								  tariff != 'CRIIN', tariff != 'CRIOU',
+								  $promotionDetails : promotionDetails -> ($promotionDetails.size() <= 0),
+								  $sectionName : sectionName,
+								  $contractNumber : contractNumber
+								)
+
+		$accError : NamedDouble ( $name : name -> ($name.equals("1.11AccError" + $contractNumber + $sectionName)) )
+
+	then
+		$accError.addTo(1);
+end
+
+rule "Regra 01.11 - Verifying the voice usage with type = AC"
+
+	salience 90
+
+	when
+
+		$usage : TIMUsageDetail ( totalAmount <= 0,
+								  amountBeforePromotions > 0,
+								  discountAmount <= 0,
+								  voiceUsage == true,
+								  microCellDesc == null,
+								  freeUnitIndicator != "F",
+								  $dur : usageDuration -> ($dur.getSeconds() > 17 && $dur.getType().equals(UnitCounter.TIME_COUNTER)),
+								  type == "AC",
+								  tariff != 'CRIIN', tariff != 'CRIOU',
+								  $promotionDetails : promotionDetails -> ($promotionDetails.size() <= 0),
+								  $sectionName : sectionName,
+								  $contractNumber : contractNumber
+								)
+
+		$accError : NamedDouble ( $name : name -> ($name.equals("1.11AccError" + $contractNumber + $sectionName)) )
+
+	then
+		$accError.addTo(1);
+end
+
+rule "Regra 01.11 - Verifying usage for CRIIN"
+
+	salience 90
+
+	when
+
+		$usage : TIMUsageDetail ( totalAmount <= 0,
+								  amountBeforePromotions > 0,
+								  discountAmount <= 0,
+								  microCellDesc == null,
+								  freeUnitIndicator != "F",
+								  tariff == 'CRIIN',
+								  $promotionDetails : promotionDetails -> ($promotionDetails.size() <= 0),
+								  $sectionName : sectionName,
+								  $contractNumber : contractNumber
+								)
+
+		$accError : NamedDouble ( $name : name -> ($name.equals("1.11AccError" + $contractNumber + $sectionName)) )
+
+	then
+		RoamingAgreeVO roamingAgree = (RoamingAgreeVO)roamingAgreeCache.getFromCache(RoamingAgreeVO.createAlternateKey($usage.getDestinationCity()));
+		if ( roamingAgree == null ) {
+			$accError.addTo(1);
+		}
+end
+
+rule "Regra 01.11 - Verifying usage for CRIOU"
+
+	salience 90
+
+	when
+
+		$usage : TIMUsageDetail ( totalAmount <= 0,
+								  amountBeforePromotions > 0,
+								  discountAmount <= 0,
+								  microCellDesc == null,
+								  freeUnitIndicator != "F",
+								  tariff == 'CRIOU',
+								  $promotionDetails : promotionDetails -> ($promotionDetails.size() <= 0),
+								  $sectionName : sectionName,
+								  $contractNumber : contractNumber
+								)
+
+		$accError : NamedDouble ( $name : name -> ($name.equals("1.11AccError" + $contractNumber + $sectionName)) )
+
+	then
+		RoamingAgreeVO roamingAgree = (RoamingAgreeVO)roamingAgreeCache.getFromCache(RoamingAgreeVO.createAlternateKey($usage.getDestinationCity()));
+		if ( roamingAgree == null ) {
+			$accError.addTo(1);
+		}
+end
+
+rule "Regra 01.11 - Verifying the data usage"
+
+	salience 90
+
+	when
+
+		TIMUsageDetail ( totalAmount <= 0,
+					     amountBeforePromotions > 0,
+						 discountAmount <= 0,
+						 dataUsage == true,
+						 microCellDesc == null,
+						 freeUnitIndicator != "F",
+						 type != "AC", type != "AD", type != "DSL",
+						 tariff != 'CRIIN', tariff != 'CRIOU',
+						 $promotionDetails : promotionDetails -> ($promotionDetails.size() <= 0),
+						 $sectionName : sectionName,
+						 $contractNumber : contractNumber
+						)
+
+		$accError : NamedDouble ( $name : name -> ($name.equals("1.11AccError" + $contractNumber + $sectionName)) )
+
+	then
+		$accError.addTo(1);
+end
+
+
+rule "Regra 01.11 - Verifying the event usage"
+
+	salience 90
+
+	when
+
+		TIMUsageDetail ( totalAmount <= 0,
+						 amountBeforePromotions > 0,
+						 discountAmount <= 0,
+						 eventUsage == true,
+						 microCellDesc == null,
+						 freeUnitIndicator != "F",
+						 type != "AC", type != "AD", type != "DSL",
+						 tariff != 'CRIIN', tariff != 'CRIOU',
+						 $promotionDetails : promotionDetails -> ($promotionDetails.size() <= 0),
+						 $sectionName : sectionName,
+						 $contractNumber : contractNumber
+						)
+
+		$accError : NamedDouble ( $name : name -> ($name.equals("1.11AccError" + $contractNumber + $sectionName)) )
+
+	then
+		$accError.addTo(1);
+end
+
+
+rule "Regra 01.11 - Creating the critical report"
+	salience 80
+	when
+
+		Account ( $carrierCode : carrierCode )
+
+		ContractUsageGroupSubsection ( $sectionName : sectionName,
+									   $contractNumber : contractNumber,
+									   $accessNumber : accessNumber
+									 )
+
+		$accError : NamedDouble ( $name : name -> ($name.equals("1.11AccError" + $contractNumber + $sectionName)) )
+
+	then
+		if ( $accError.getValue() > 0 ) {
+			consequenceBuilder.setRule("R01-11","Free unit aplicada indevidamente");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+			c.addAttribute("Número do Contrato", $contractNumber);
+			c.addAttribute("Número de Acesso do Contrato", $accessNumber);
+			c.addAttribute("Nome da Seção", $sectionName);
+			c.setDescription("Evento de Uso com valor zerado sem ter nenhuma promoção cadastrada.");
+			c.addDoubleAttribute("Quantidade de Eventos de Uso com erro", $accError.getValue());
+
+			results.add(c);
+		}
+end
+
+

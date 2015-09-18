@@ -1,0 +1,110 @@
+<?xml version = "1.0" encoding = "UTF-8"?>
+
+<root>
+	<sql:configuration xmlns:sql="http://www.auster.com.br/common/sql/">
+		<sql:statements>
+
+			<sql:statement name="microcellInsertQuery">
+				<sql:query>
+				INSERT INTO MICROCELL_RATES 
+					(PLAN_UID, EFFECTIVE_DATE, SHORT_DESC, LOADED_DATE, UMCODE, DESCRIPTION, SCALEFACTOR, PRICE_VALUE)
+				VALUES 
+					( ?, ?, ?, SYSDATE, ?, ?, ?, ?)
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="packageInsertQuery">
+				<sql:query>
+				INSERT INTO PACKAGE_RATES 
+					(PLAN_UID, PACKAGE_UID, EFFECTIVE_DATE, LOADED_DATE, ACCESS_FEE, SUBSCRIPTION_RATE)
+				VALUES 
+					( ?, ?, ?, SYSDATE, ?, ?)
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="serviceInsertQuery">
+				<sql:query>
+				INSERT INTO SERVICE_RATES 
+					(PLAN_UID, SERVICE_UID, EFFECTIVE_DATE, LOADED_DATE, ACCESS_FEE, ONETIME_RATE, SUBSCRIPTION_RATE)
+				VALUES 
+					( ?, ?, ?, SYSDATE, ?, ?, ?)
+				</sql:query>
+			</sql:statement>
+
+			<!-- PACKAGE_UID was set to null since its no longer used -->
+			<sql:statement name="priceplanInsertQuery">
+				<sql:query>
+				INSERT INTO PRICEPLAN_RATES ( PLAN_UID, SERVICE_UID, TARIFF_ZONE_UID, EFFECTIVE_DATE, UMCODE, LOADED_DATE, PACKAGE_UID,
+				                              END_RANGE_1, AMT_RANGE_1, END_RANGE_2, AMT_RANGE_2, END_RANGE_3, AMT_RANGE_3, END_RANGE_4,
+				                              AMT_RANGE_4, END_RANGE_5, AMT_RANGE_5, AMT_RANGE_MAX )   
+				VALUES 
+											( ? , ? , ? , ?, ?, SYSDATE, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )
+				</sql:query>
+			</sql:statement>
+	
+			<sql:statement name="microcellInsertQuery">
+				<sql:query>
+				INSERT INTO MICROCELL_RATES 
+					( PLAN_UID, EFFECTIVE_DATE, SHORT_DESC, LOADED_DATE, UMCODE, DESCRIPTION, SCALEFACTOR, PRICE_VALUE )   
+				VALUES                       
+					( ?, ?, ?, SYSDATE, ?, ?, ?, ? )
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="crashprogramInsertQuery">
+				<sql:query>
+				INSERT INTO CRASH_PROGRAM2 
+					( COST_ID, CSGCODE, INIT_VOLUME, END_VOLUME, PPM, LOADED_DATE )   
+				VALUES                       
+					( ?, ?, ?, ?, ?, SYSDATE )
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="voiceInsertQuery">
+				<sql:query>
+				INSERT INTO TEMP_USAGE_RATES 
+					( TARIFF_ZONE_UID, PLANS_UID, SERVICES_UID, RATE_TIME_ZONE_UID, EFFECTIVE_DATE, INCOMING_FLAG, RATE_TYPE, AMOUNT, VS, STATE )
+				VALUES 
+					(?, ?, ?, ?, ?, DECODE(INSTR(UPPER(?), 'OUT'), 0, 'Y', 'N'), ?, ?, ?, ? )
+				</sql:query>
+			</sql:statement>
+			
+			<sql:statement name="npackInsertQuery">
+				<sql:query>
+				INSERT INTO NPACK_RATES 
+					( PLAN_UID, INIT_RANGE, END_RANGE, AMOUNT, EFFECTIVE_DATE, LOADED_DATE )
+				VALUES 
+					(?, ?, ?, ?, ?, SYSDATE )
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="megatimInsertQuery">
+				<sql:query>
+				INSERT INTO TEMP_MEGATIM_PARAMS 
+					( ACTIVATION_UID, GEO_UID, ONNET_ONLY, VALID_PERIOD, INVOICE_DESCRIPTION, NEW_CUSTOMER_FEE, YET_CUSTOMER_FEE )
+				VALUES 
+					(?, ?, ?, ?, ?, ?, ? )
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="megatimServicesInsertQuery">
+				<sql:query>
+				INSERT INTO TEMP_MEGATIM_SERVICES
+					( ACTIVATION_UID, GEO_UID, SERVICE_UID, PROMO_QTTY )
+				VALUES 
+					(?, ?, ?, ? )
+				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="meuSonhoInsertQuery">
+				<sql:query>
+				INSERT INTO MEUSONHO_RATES
+					( TARIFF_ZONE_UID, STATE, PACKAGE_NAME, PPM, LOADED_DATE )
+				VALUES 
+					(?, ?, ?, ?, SYSDATE )
+				</sql:query>
+			</sql:statement>
+
+		</sql:statements>
+	</sql:configuration>
+</root>

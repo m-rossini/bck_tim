@@ -1,0 +1,60 @@
+<?xml version = "1.0" encoding = "UTF-8"?>
+<root>
+  <sql:configuration xmlns:sql="http://www.auster.com.br/common/sql/">
+    <sql:statements>
+
+    <sql:statement name="loadAllRequests">
+        <sql:query>
+	      SELECT TRANSACTION_ID,
+                     REQUEST_KEY,
+                     REQUEST_STATUS
+          FROM BCK_PROCESS_CHECKPOINT
+        </sql:query>
+    </sql:statement>
+
+    <sql:statement name="loadAllByTransaction">
+        <sql:query>
+          SELECT REQUEST_KEY,
+                 REQUEST_STATUS
+          FROM BCK_PROCESS_CHECKPOINT
+          WHERE TRANSACTION_ID = ?
+        </sql:query>
+        <sql:param index="1" type="String"/>
+    </sql:statement>
+
+    <sql:statement name="insertRequest">
+        <sql:query>
+          INSERT INTO BCK_PROCESS_CHECKPOINT
+          (TRANSACTION_ID, REQUEST_KEY, REQUEST_STATUS)
+          VALUES (?, ?, ?)
+        </sql:query>
+        <sql:param index="1" type="String"/>
+        <sql:param index="2" type="String"/>
+        <sql:param index="3" type="String"/>
+    </sql:statement>
+
+    <sql:statement name="updateRequest">
+        <sql:query>
+          UPDATE BCK_PROCESS_CHECKPOINT
+          SET REQUEST_STATUS = ?
+          WHERE TRANSACTION_ID = ? AND
+                REQUEST_KEY = ?
+        </sql:query>
+        <sql:param index="1" type="String"/>
+        <sql:param index="2" type="String"/>
+        <sql:param index="3" type="String"/>
+    </sql:statement>
+
+    <sql:statement name="removeRequests">
+        <sql:query>
+          DELETE FROM BCK_PROCESS_CHECKPOINT
+          WHERE TRANSACTION_ID = ?
+        </sql:query>
+    </sql:statement>
+
+
+    </sql:statements>
+  </sql:configuration>
+</root>
+
+

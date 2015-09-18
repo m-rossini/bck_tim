@@ -1,0 +1,42 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.common.lang.NamedHashMap;
+import br.com.auster.common.rules.GlobalForLog;
+import java.util.Iterator;
+import br.com.auster.tim.om.invoice.GroupItemReceiptDetail;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+function String getOCCDescr(String _description) {
+   if (_description == null) {
+      return "[OCC sem descrição]";
+   }
+   return _description;
+} 
+
+
+rule "Regra R27.4 - DEBUG ONLY"
+	salience 80
+	when
+		$occ : GroupItemReceiptDetail( 
+								OCC == true
+							   )
+	then 
+		String occDesc = getOCCDescr( $occ.getCaption() );
+		GlobalForLog.log("INFO", "Found OCC with description " + occDesc, null);
+end

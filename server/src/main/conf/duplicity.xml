@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<data-aware>
+	<log4j:configuration xmlns:log4j="http://jakarta.apache.org/log4j/">
+		<appender name="FILE" class="biz.minaret.log4j.DatedFileAppender">
+			<param name="Threshold" value="debug" />
+			<param name="Directory" value="/stage/tim/billcheckout/log" />
+			<param name="Prefix" value="usage-loader-" />
+			<param name="Suffix" value=".log" />
+			<param name="Append" value="false" />
+			<layout class="org.apache.log4j.PatternLayout">
+				<param name="ConversionPattern" value="%d{ABSOLUTE} %-5p [(%c(1) %t] %m%n" />
+			</layout>
+		</appender>
+		<root>
+			<priority value="info" />
+			<appender-ref ref="FILE" />
+		</root>
+	</log4j:configuration>
+
+
+	<requests:configuration xmlns:requests="http://www.auster.com.br/dware/requests/">
+		<builder name="bgh" class-name="br.com.auster.dware.request.file.FileRequestBuilder">
+			<config bufferSize="262244" encoding="ISO-8859-1" maxRecordSize="2048" record-delimiter="\n"
+				field-delimiter="^" request-create-type="FileRequest">
+				<record-key index="1" position="1" length="8" trim="false" new-request-pattern="00000000" />
+				<request-key record-key-pattern="00000000">
+					<field name="key" index="9" position="1" length="8" type="java.lang.String" />
+				</request-key>
+				<record key="00000000">
+					<field name="accountNumber" index="8" />
+				</record>
+				<record key="10000000">
+					<field name="cutDate" index="27" />
+				</record>
+				<record key="11200000">
+					<field name="cutDate" index="27" />
+				</record>
+			</config>
+		</builder>
+		<builder-chain name="default">
+			<builder name="bgh" />
+		</builder-chain>
+	</requests:configuration>
+
+	<dw:configuration name="invoice" xmlns:dw="http://www.auster.com.br/dware/">
+
+		<dw:graph-manager>
+			<dw:local-graph-group name="group-01" graphs-per-processor="2" max-weight="4500000">
+				<dw:mbean mbean-component="PriorityQueueWishGraphGroup"
+					mbean-class-name="br.com.auster.dware.monitor.manager.JMXPriorityWishGraphGroup" pass-reference="true" />
+			</dw:local-graph-group>
+
+			<dw:local-graph-group name="group-02" graphs-per-processor="2" max-weight="4500000">
+				<dw:mbean mbean-component="PriorityQueueWishGraphGroup"
+					mbean-class-name="br.com.auster.dware.monitor.manager.JMXPriorityWishGraphGroup" pass-reference="true" />
+			</dw:local-graph-group>
+
+			<dw:local-graph-group name="group-03" graphs-per-processor="2" max-weight="4500000">
+				<dw:mbean mbean-component="PriorityQueueWishGraphGroup"
+					mbean-class-name="br.com.auster.dware.monitor.manager.JMXPriorityWishGraphGroup" pass-reference="true" />
+			</dw:local-graph-group>
+
+			<dw:local-graph-group name="group-04" max-graphs="1" max-weight="4500001">
+				<dw:mbean mbean-component="PriorityQueueWishGraphGroup"
+					mbean-class-name="br.com.auster.dware.monitor.manager.JMXPriorityWishGraphGroup" pass-reference="true" />
+			</dw:local-graph-group>
+			<!--  dw:checkpoint class-name="br.com.auster.dware.manager.checkpoint.RetryOnlyCheckpoint" max-req-fails="3" / -->
+			<dw:request-forwarder class-name="br.com.auster.dware.manager.FIFOQueueReqForwarder" />
+		</dw:graph-manager>
+
+		<dw:graph-design>
+
+			<dw:filter name="InputFromFile" class-name="br.com.auster.dware.filter.PartialInputFromFileList">
+				<dw:config buffer-size="16384" file-cache-size="10" />
+				<dw:connect-to name="Pipe" />
+			</dw:filter>
+
+			<dw:filter name="Pipe" class-name="br.com.auster.dware.filter.PipeFilter">
+				<dw:connect-to name="BGH2XML" />
+			</dw:filter>
+
+			<dw:filter name="BGH2XML" class-name="br.com.auster.dware.filter.XMLReaderFilter">
+				<dw:config class-name="br.com.auster.udd.reader.TaggedFileReader">
+					<dw:xml-reader udd-path="bgh/ifd-udd.xml" quiet-missing="true" encrypted="false" />
+				</dw:config>
+				<dw:connect-to name="RequestDropper" />
+			</dw:filter>
+
+            <!-- Checks to see if the request is above a given threshold -->
+            <dw:filter name="RequestDropper" class-name="br.com.auster.dware.filter.CHLimiterPipeFilter">
+                 <dw:config max-size="25000000" pct-deviation="20" ignore-exception="false">
+                 </dw:config>
+                 <dw:connect-to name="DuplicityHandler" />
+            </dw:filter>
+
+            <dw:filter name="DuplicityHandler" class-name="br.com.auster.billcheckout.rules.duplicity.DuplicityContentHandlerFilter">
+              <dw:config>
+                <dw:duplicity-content-handler class-name="br.com.auster.tim.billcheckout.rules.duplicity.TIMDuplicityContentHandler"/>
+              </dw:config>
+            </dw:filter>
+
+		</dw:graph-design>
+	</dw:configuration>
+
+</data-aware>
+

@@ -1,0 +1,173 @@
+#created on: 11/10/2007
+package br.com.auster.tim.billchekout
+
+#list any import classes here.
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.ServiceReceiptDetail;
+import br.com.auster.tim.om.invoice.ContractTotalsDetail;
+import br.com.auster.tim.billcheckout.tariff.CachedServiceRatesVO;
+import br.com.auster.tim.billcheckout.tariff.ServiceRatesVO;
+
+import br.com.auster.om.util.ParserUtils;
+import br.com.auster.common.rules.GlobalForLog;
+
+#declare any global variables here
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.tim.billcheckout.tariff.ServiceRatesCache alternateServiceRatesCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+rule "Regra 1.22 - Validating plan fees"
+	when
+
+		ContractTotalsDetail ( tag == "60000000",
+							   $coid : contractNumber,
+							   $chargedAmount : totalAmount )
+							   
+		ContractInfoSection ( contractNumber == $coid,
+							  $rateplan : ratePlan,
+							  $accNumber : accessNbr )
+
+		Account( $carrierCode : carrierCode,
+		 		 $carrierState : carrierState
+			   )
+
+		Invoice ( $endDate : cycleEndDate )
+
+	then
+		
+		CachedServiceRatesVO cachedVo = (CachedServiceRatesVO)alternateServiceRatesCache.getFromCache(
+			                        CachedServiceRatesVO.createAlternateKey("Serviço de Voz", $rateplan, $carrierState) );
+		
+		String msg = null;
+		ServiceRatesVO vo = null;
+		if (cachedVo == null) {
+			msg = "Tarifa para este plano não está configurada na base.";
+		} else {
+			vo = (ServiceRatesVO) cachedVo.getService($endDate);
+			if (vo == null) {
+				msg = "Tarifa para este plano não está configurada na base.";
+			} else if (areDoublesDifferent(vo.getAccessFee(), $chargedAmount.doubleValue())) {
+				msg = "Valor da mensalidade cobrada diverge do configurado na base.";
+			}
+		}
+		
+		if (msg != null) {
+			consequenceBuilder.setRule("R01-22","Tarifação de Planos e serviços");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+	
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription(msg);
+
+			c.addAttribute("Número do contrato", $coid);
+			c.addAttribute("Número do acesso", $accNumber);
+			c.addAttribute("Plano", $rateplan);
+			c.addAttribute("Estado", $carrierState);
+			c.addAttribute("Serviço", "Serviço de Voz");
+			c.addDoubleAttribute("Valor cobrado", $chargedAmount.doubleValue());
+			if (vo != null) {
+				c.addDoubleAttribute("Valor esperado", vo.getAccessFee());
+			} else {
+				c.addNullAttribute("Valor esperado");
+			}
+	
+			results.add(c);
+		}
+		
+end
+
+
+rule "Regra 1.22 - Validating service fees"
+	when
+
+		ServiceReceiptDetail ( subscription == false,
+							   $coid : contractNumber,
+							   $chargedAmount : totalAmount,
+							   $serviceDescription : caption )
+							   
+		ContractInfoSection ( contractNumber == $coid,
+							  $rateplan : ratePlan,
+							  $accNumber : accessNbr )
+
+		Account( $carrierCode : carrierCode,
+		 		 $carrierState : carrierState
+			   )
+
+		Invoice ( $endDate : cycleEndDate )
+
+	then
+		
+		CachedServiceRatesVO cachedVo = (CachedServiceRatesVO)alternateServiceRatesCache.getFromCache(
+						CachedServiceRatesVO.createAlternateKey($serviceDescription, $rateplan, $carrierState) );
+		
+		String msg = null;
+		ServiceRatesVO vo = null;
+		if (cachedVo == null) {
+			msg = "Tarifa para este serviço não está configurada na base.";
+		} else {
+			vo = (ServiceRatesVO) cachedVo.getService($endDate);
+			if (vo == null) {
+				msg = "Tarifa para este serviço não está configurada na base.";
+			} else if (areDoublesDifferent(vo.getAccessFee(), $chargedAmount.doubleValue())) {
+				msg = "Valor do serviço cobrado diverge do configurado na base.";
+			}
+		}
+		
+		if (msg != null) {
+			consequenceBuilder.setRule("R01-22","Tarifação de Planos e serviços");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+	
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription(msg);
+
+			c.addAttribute("Número do contrato", $coid);
+			c.addAttribute("Número do acesso", $accNumber);
+			c.addAttribute("Plano", $rateplan);
+			c.addAttribute("Estado", $carrierState);
+			c.addAttribute("Serviço", $serviceDescription);
+			c.addDoubleAttribute("Valor cobrado", $chargedAmount.doubleValue());
+			if (vo != null) {
+				c.addDoubleAttribute("Valor esperado", vo.getAccessFee());
+			} else {
+				c.addNullAttribute("Valor esperado");
+			}
+	
+			results.add(c);
+		}
+		
+end
+
+
+
+function boolean areDoublesDifferent(double _calculatedAmount, double _chargedAmount) {
+	double result = Math.abs(_calculatedAmount - _chargedAmount);
+	if (result > 0.010001) {
+		// Differences greater then 0.010001 are automatically set as errors
+		return true;
+	} else if (result > 0.007) {
+		// This condition is to validate rounding problems. If difference is greater then 0.007
+		//    but bellow 0.010001, then let's check the string version of each value.
+		// This also helps not reporting errors with both calc. and total amount with identical values.
+		return (! ParserUtils.asDoubleString(_calculatedAmount).equals(ParserUtils.asDoubleString(_chargedAmount)) );
+	}
+	return false;
+}

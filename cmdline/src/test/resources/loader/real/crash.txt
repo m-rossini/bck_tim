@@ -1,0 +1,32 @@
+Plano Nosso Modo-G01;8;GRUPO - Pacote de Minutos- Nosso Modo;30SP;100;999;0,47
+Plano Nosso Modo-G01;8;GRUPO - Pacote de Minutos- Nosso Modo;30SP;1000;1499;0,46
+Plano Nosso Modo-G01;8;GRUPO - Pacote de Minutos- Nosso Modo;30SP;1500;1999;0,44
+Plano Nosso Modo-G01;8;GRUPO - Pacote de Minutos- Nosso Modo;30SP;2000;4999;0,44
+Plano Nosso Modo-G01;8;GRUPO - Pacote de Minutos- Nosso Modo;30SP;5000;14999;0,42
+Plano Nosso Modo-G01;8;GRUPO - Pacote de Minutos- Nosso Modo;30SP;15000;49999;0,38
+Plano Nosso Modo-G01;8;GRUPO - Pacote de Minutos- Nosso Modo;30SP;50000;9999999;0,37
+Plano Nosso Modo-G01;8;GRUPO - Pcte Promocional - Torpedos;30SP;100;999;0,47
+Plano Nosso Modo-G01;8;GRUPO - Pcte Promocional - Torpedos;30SP;1000;1499;0,46
+Plano Nosso Modo-G01;8;GRUPO - Pcte Promocional - Torpedos;30SP;1500;1999;0,44
+Plano Nosso Modo-G01;8;GRUPO - Pcte Promocional - Torpedos;30SP;2000;4999;0,44
+Plano Nosso Modo-G01;8;GRUPO - Pcte Promocional - Torpedos;30SP;5000;14999;0,42
+Plano Nosso Modo-G01;8;GRUPO - Pcte Promocional - Torpedos;30SP;15000;49999;0,38
+Plano Nosso Modo-G01;8;GRUPO - Pcte Promocional - Torpedos;30SP;50000;9999999;0,37
+Plano Nosso Modo-G01;8;GRUPO - Pacote GPRS/Edge Compartilhado;30SP;0;104857599;0,0000057125091
+Plano Nosso Modo-G01;8;GRUPO - Pacote GPRS/Edge Compartilhado;30SP;104857600;314572799;0,0000053310394
+Plano Nosso Modo-G01;8;GRUPO - Pacote GPRS/Edge Compartilhado;30SP;314572800;419430399;0,0000046634674
+Plano Nosso Modo-G01;8;GRUPO - Pacote GPRS/Edge Compartilhado;30SP;419430400;524287999;0,0000043773651
+Plano Nosso Modo-G01;8;GRUPO - Pacote GPRS/Edge Compartilhado;30SP;524288000;1073741823;0,0000018119812
+Plano Nosso Modo-G01;8;GRUPO - Pacote GPRS/Edge Compartilhado;30SP;1073741824;3221225471;0,0000014305114
+Plano Nosso Modo-G01;8;GRUPO - Pacote GPRS/Edge Compartilhado;30SP;3221225472;6442450943;0,0000012397766
+Plano Nosso Modo-G01;8;GRUPO - Pacote GPRS/Edge Compartilhado;30SP;6442450944;10737418239;0,0000011444091
+Plano Nosso Modo-G01;8;GRUPO - Pacote GPRS/Edge Compartilhado;30SP;10737418240;999999999999999;0,00000095367431
+Plano Nosso Modo-G01;8;GRUPO - Pacote TIM w-VPN Compartilhado;30SP;0;104857599;0,0000057125091
+Plano Nosso Modo-G01;8;GRUPO - Pacote TIM w-VPN Compartilhado;30SP;104857600;314572799;0,0000053310394
+Plano Nosso Modo-G01;8;GRUPO - Pacote TIM w-VPN Compartilhado;30SP;314572800;419430399;0,0000046634674
+Plano Nosso Modo-G01;8;GRUPO - Pacote TIM w-VPN Compartilhado;30SP;419430400;524287999;0,0000043773651
+Plano Nosso Modo-G01;8;GRUPO - Pacote TIM w-VPN Compartilhado;30SP;524288000;1073741823;0,0000018119812
+Plano Nosso Modo-G01;8;GRUPO - Pacote TIM w-VPN Compartilhado;30SP;1073741824;3221225471;0,0000014305114
+Plano Nosso Modo-G01;8;GRUPO - Pacote TIM w-VPN Compartilhado;30SP;3221225472;6442450943;0,0000012397766
+Plano Nosso Modo-G01;8;GRUPO - Pacote TIM w-VPN Compartilhado;30SP;6442450944;10737418239;0,0000011444091
+Plano Nosso Modo-G01;8;GRUPO - Pacote TIM w-VPN Compartilhado;30SP;10737418240;999999999999999;0,00000095367431

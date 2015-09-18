@@ -1,0 +1,12 @@
+
+-- removendo possíveis críticas criadas a partir das novas regras
+DELETE FROM BILLCHKDB.BCK_CONSEQUENCE_ATTR 
+WHERE OBJID IN ( SELECT ATTRIBUTE_UID FROM BILLCHKDB.BCK_CONSEQUENCE WHERE RULE_UID >= 70 );
+
+DELETE FROM BILLCHKDB.BCK_CONSEQUENCE WHERE RULE_UID >= 70;
+
+-- removendo a entrada de todas as regras adicionadas
+DELETE FROM BILLCHKDB.BCK_RULE WHERE OBJID >= 70;
+COMMIT;
+
+

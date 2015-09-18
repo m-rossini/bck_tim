@@ -1,0 +1,107 @@
+#created on: 05/06/2008
+package br.com.auster.tim.billchekout
+
+import br.com.auster.om.filter.request.BillcheckoutRequestWrapper;
+
+global br.com.auster.tim.billcheckout.bscs.SGTCustomCache sgtCache;
+global br.com.auster.tim.billcheckout.param.MpufftabCache mpufftabCache;
+global br.com.auster.tim.billcheckout.param.MpulkfxoCache mpulkfxoCache;
+global br.com.auster.tim.billcheckout.param.MpulkpvbCache mpulkpvbCache;
+global br.com.auster.tim.billcheckout.param.MpulktmbCache mpulktmbCache;
+global br.com.auster.tim.billcheckout.param.ContractServicesCache contractServicesCache;
+global br.com.auster.tim.billcheckout.param.MpufftabListCache mpufftabListCache;
+global br.com.auster.tim.billcheckout.param.ContractPromotionsCache contractPromotionsCache;
+global br.com.auster.tim.billcheckout.param.OCCContractBreakCache OCCDescriptions;
+global br.com.auster.tim.billcheckout.param.PenaltyInterestLDNFCache penaltyInterestLDNFCache;
+global br.com.auster.tim.billcheckout.param.PenaltyInterestLocalNFCache penaltyInterestLocalNFCache;
+global br.com.auster.tim.billcheckout.util.UsageGroupingCache bghUsageGroupingCache;
+global br.com.auster.tim.billcheckout.param.CBCFContractDAO CBCFInterface;
+global br.com.auster.tim.billcheckout.param.ContractServicesDAO contrServicesDAO;
+global br.com.auster.tim.billcheckout.util.FreeUnitHelper fuHelper;
+global br.com.auster.tim.billcheckout.bscs.RateplanHistCache rateplanHist;
+global br.com.auster.tim.billcheckout.param.DwPromoMcCache dwPromoMcCache;
+global br.com.auster.tim.billcheckout.param.ProgressiveDiscountCache progressiveDiscountCache;
+
+global br.com.auster.tim.billcheckout.param.ElegibilityCache elegibCache;
+global br.com.auster.tim.billcheckout.param.ContractExistsServicesCache contrExistsServCache;
+global br.com.auster.tim.billcheckout.bscs.ContractExistsPackCache contrExistsPackCache;
+global br.com.auster.tim.billcheckout.bscs.ScanStructureLevelCache scanStructLevelCache;
+global br.com.auster.tim.billcheckout.bscs.AnatelCodeCache anatelCodeCache;
+
+global br.com.auster.tim.billcheckout.tariff.MicrocellRatesCache microcellRatesCache;
+global br.com.auster.tim.billcheckout.tariff.MicrocellSGTRatesCache microcellSGTRatesCache;
+global br.com.auster.tim.billcheckout.tariff.ServiceRatesCache serviceRatesCache;
+global br.com.auster.tim.billcheckout.tariff.RatesGuidingCache ratingsCache;
+global br.com.auster.tim.billcheckout.npack.NPackPackageInfoCache npackInfoCache;
+global br.com.auster.tim.billcheckout.npack.NPackRateCache npackRateCache;
+global br.com.auster.tim.billcheckout.crashprogram.CostCenterCache costCenterCache;
+global br.com.auster.tim.billcheckout.tariff.CrashProgramRatesCache cashProgramRatesCache;
+global br.com.auster.tim.billcheckout.tariff.ServiceRatesCache alternateServiceRatesCache;
+global br.com.auster.tim.billcheckout.tariff.MegaTIMCache megatimCache;
+global br.com.auster.tim.billcheckout.param.CustomerSituationCache customerSituationCache;
+global br.com.auster.tim.billcheckout.param.PlansCache plansCache;
+global br.com.auster.tim.billcheckout.tariff.PricePlanRatesCache pricePlanCache;
+global br.com.auster.tim.billcheckout.tariff.MyDreamRatesCache myDreamCache;
+global br.com.auster.tim.billcheckout.tariff.PricePlanRatesCache alternatePricePlanCache;
+
+global br.com.auster.billcheckout.model.ModelLoader modelLoader;
+
+/**
+ * Rule to init the database environment for each cache sending the
+ * step number.
+ */
+rule "initEnvironment"
+	salience 100
+
+	when
+
+	$bckRequest : BillcheckoutRequestWrapper ( $request : request -> ( ($request.getAttributes().get("mode.id") != null) ))
+
+	then
+
+		String step = (String) $bckRequest.getAttributes().get("mode.id");
+
+		sgtCache.initEnvironment(step);
+		mpufftabCache.initEnvironment(step);
+		mpulkfxoCache.initEnvironment(step);
+		mpulkpvbCache.initEnvironment(step);
+		mpulktmbCache.initEnvironment(step);
+		contractServicesCache.initEnvironment(step);
+		mpufftabListCache.initEnvironment(step);
+		contractPromotionsCache.initEnvironment(step);
+		OCCDescriptions.initEnvironment(step);
+		penaltyInterestLDNFCache.initEnvironment(step);
+		penaltyInterestLocalNFCache.initEnvironment(step);
+		bghUsageGroupingCache.initEnvironment(step);
+		CBCFInterface.initEnvironment(step);
+		contrServicesDAO.initEnvironment(step);
+		fuHelper.initEnvironment(step);
+		rateplanHist.initEnvironment(step);
+		dwPromoMcCache.initEnvironment(step);
+		progressiveDiscountCache.initEnvironment(step);
+		// Melhorias F2
+		elegibCache.initEnvironment(step);
+		contrExistsServCache.initEnvironment(step);
+		contrExistsPackCache.initEnvironment(step);
+		scanStructLevelCache.initEnvironment(step);
+		anatelCodeCache.initEnvironment(step);
+		// Melhorias F3
+		microcellRatesCache.initEnvironment(step);
+		microcellSGTRatesCache.initEnvironment(step);
+		serviceRatesCache.initEnvironment(step);
+		ratingsCache.initEnvironment(step);
+		npackInfoCache.initEnvironment(step);
+		npackRateCache.initEnvironment(step);
+		costCenterCache.initEnvironment(step);
+		cashProgramRatesCache.initEnvironment(step);
+		alternateServiceRatesCache.initEnvironment(step);
+		megatimCache.initEnvironment(step);
+		customerSituationCache.initEnvironment(step);
+		plansCache.initEnvironment(step);
+		pricePlanCache.initEnvironment(step);
+		myDreamCache.initEnvironment(step);
+		alternatePricePlanCache.initEnvironment(step);
+
+		modelLoader.refreshCache(step);
+
+end

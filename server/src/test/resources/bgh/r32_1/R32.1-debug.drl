@@ -1,0 +1,48 @@
+#created on: 17/04/2009
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.common.lang.NamedHashMap;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.ServiceReceiptDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+
+import br.com.auster.tim.billcheckout.bscs.AnatelCodeVO;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+
+#declare any global variables here
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global br.com.auster.tim.billcheckout.bscs.AnatelCodeCache anatelCodeCache;
+global java.util.List results;
+
+
+
+rule "R32-1 - Debug 1"
+salience 70
+when
+	ServiceReceiptDetail ( subscription == false, 
+	                       anatelCode != null,
+	                       $packageCode : packageShortName != null,
+	                       $packageAnatelCode : anatelCode  != null,
+	                       $rateplan : rateplanShdes != null )
+
+
+	ContractInfoSection ( $r2 : rateplanShdes,
+			 			  anatelCode != null )  
+
+then
+   GlobalForLog.log("INFO",$rateplan+"!="+$r2);
+end

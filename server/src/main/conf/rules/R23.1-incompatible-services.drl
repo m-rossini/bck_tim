@@ -1,0 +1,257 @@
+package br.com.auster.tim.billchekout;
+
+import java.util.List;
+import java.util.HashSet;
+import java.util.Iterator;
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.billcheckout.util.NamedSet;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.UsageFUDetail;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.billcheckout.param.PromotionExclusivityVO;
+import br.com.auster.tim.billcheckout.param.DwPromoMcVO;
+import br.com.auster.tim.billcheckout.param.ContractServicesVO;
+import br.com.auster.tim.billcheckout.param.PlansVO;
+import br.com.auster.tim.billcheckout.param.PromotionExclusivityByContractVO;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+global br.com.auster.tim.billcheckout.param.PromotionExclusivityCache promotionExclusivityCache;
+global br.com.auster.tim.billcheckout.param.DwPromoMcCache dwPromoMcCache;
+global br.com.auster.tim.billcheckout.param.ContractServicesCache contractServicesCache;
+global br.com.auster.tim.billcheckout.param.PlansCache planCache;
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+rule "Regra R23.1 - Building Set of Services"
+	salience 90
+	when
+
+		ContractInfoSection( $contractNo : contractNumber )
+
+		not ( NamedSet ( $name: name -> ($name.equals("R23.1-SET"+$contractNo)) ) )
+
+	then
+
+		assert( new NamedSet("R23.1-SET"+$contractNo) );
+
+end
+
+
+
+rule "Regra R23.1 - Collecting Services for MC"
+	salience 80
+	when
+
+		TIMUsageDetail ( $serviceId : microCellDesc != null,
+		                 $contractNo : contractNumber
+		               )
+
+		$servicesSet : NamedSet ( $name : name -> ($name.equals("R23.1-SET"+$contractNo)) )
+
+	then
+
+		//GlobalForLog.log("DEBUG", "Entrou na regra ''Regra R23.1 - Collecting Services for MC''");
+
+		PromotionExclusivityVO promotionExclusivityVO = (PromotionExclusivityVO)
+								promotionExclusivityCache.getFromCache(PromotionExclusivityVO.createAlternateKey($serviceId));
+		if (promotionExclusivityVO != null) {
+			//GlobalForLog.log("DEBUG", "Adding MC "+ $serviceId +" to set of services");
+			$servicesSet.add(promotionExclusivityVO);
+		}
+
+end
+
+rule "Regra R23.1 - Collecting Services for FU"
+	salience 80
+	when
+
+		TIMUsageDetail ( freeUnitIndicator != "N",
+		           	     $fuDetails : freeUnitDetails != null,
+		           	     $contractNo : contractNumber
+		               )
+
+		$servicesSet : NamedSet ( $name : name -> ($name.equals("R23.1-SET"+$contractNo)) )
+
+	then
+
+		//GlobalForLog.log("DEBUG", "Entrou na regra ''Regra R23.1 - Collecting Services for FU''");
+
+		Iterator it = $fuDetails.iterator();
+		while (it.hasNext()) {
+			UsageFUDetail fuDetailInfo = (UsageFUDetail) it.next();
+			String serviceId = fuDetailInfo.getPackageShortDescription();
+			if (serviceId == null) { continue; }
+			PromotionExclusivityVO promotionExclusivityVO = (PromotionExclusivityVO)
+								promotionExclusivityCache.getFromCache(PromotionExclusivityVO.createAlternateKey(serviceId));
+			if (promotionExclusivityVO != null) {
+				//GlobalForLog.log("DEBUG", "Adding FU "+ serviceId +" to set of services");
+				$servicesSet.add(promotionExclusivityVO);
+			}
+		}
+end
+
+rule "Regra R23.1 - Filter the Exclusive Promotions"
+	salience 60
+	when
+
+		Account ( $carrierCode : carrierCode,
+				  $carrierState : carrierState  )
+
+		ContractInfoSection( $contractNo : contractNumber,
+			                 $ratePlan : ratePlan,
+			                 $accessNumber : accessNbr )
+
+		$servicesSet : NamedSet ( $name : name -> ($name.equals("R23.1-SET"+$contractNo)) )
+
+	then
+
+		if($servicesSet.size() > 1) {
+			//GlobalForLog.log("DEBUG", "Entrou na regra ''Regra R23.1 - Filter the Exclusive Promotions''");
+
+			Iterator it = $servicesSet.iterator();
+			PlansVO plansVO = (PlansVO) planCache.getFromCache(PlansVO.createAlternateKey($ratePlan, $carrierState));
+
+			while (it.hasNext()) {
+				PromotionExclusivityVO promotionExclusivityVO = (PromotionExclusivityVO)it.next();
+				DwPromoMcVO dwPromoMcVO = (DwPromoMcVO) dwPromoMcCache.getFromCache(DwPromoMcVO.createAlternateKey(promotionExclusivityVO.getShortDescription()));
+				if (dwPromoMcVO != null) {
+
+					ContractServicesVO contractServicesVO = (ContractServicesVO) contractServicesCache.getFromCache(
+											ContractServicesVO.createAlternateKey($contractNo, dwPromoMcVO.getServiceCode(), plansVO.getTmCode()));
+
+					if (contractServicesVO == null) {
+
+						consequenceBuilder.setRule("R23-1","Promoções não compatíveis");
+						consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+						consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+						consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+						consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+						consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+						TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+						c.setDescription("Promoção constante na fatura não encontrada no cadastro do cliente.");
+						c.addAttribute("Número do Contrato", $contractNo);
+						c.addAttribute("Número do Acesso", $accessNumber);
+						c.addAttribute("Descrição da Promoção 1", promotionExclusivityVO.getDescription());
+						c.addNullAttribute("Data de Ativação 1");
+						c.addNullAttribute("Data de Desativação 1");
+						c.addNullAttribute("Descrição da Promoção 2");
+						c.addNullAttribute("Data de Ativação 2");
+						c.addNullAttribute("Data de Desativação 2");
+						results.add(c);
+
+					} else {
+						PromotionExclusivityByContractVO promotionExclusivityByContractVO =
+													new PromotionExclusivityByContractVO($contractNo, promotionExclusivityVO);
+						promotionExclusivityByContractVO.setActivationDate(contractServicesVO.getActivationDate());
+						promotionExclusivityByContractVO.setExpirationDate(contractServicesVO.getExpirationDate());
+						assert(promotionExclusivityByContractVO);
+					}
+				}
+			}
+		}
+end
+
+
+
+
+rule "Regra R23.1A - Verif the active period conflicts"
+	salience 50
+	when
+
+		Account ( $carrierCode : carrierCode )
+
+		ContractInfoSection( $contractNo : contractNumber,
+			                 $accessNumber : accessNbr )
+
+		$vo1 : PromotionExclusivityByContractVO ( contractNumber == $contractNo,
+				     							  $actDate : activationDate,
+				     							  $expDate : expirationDate -> ($expDate != null)
+				   								)
+
+		$vo2 : PromotionExclusivityByContractVO ( contractNumber == $contractNo,
+				     							  activationDate > $actDate,
+				     							  activationDate < $expDate
+				   								)
+
+		eval ( $vo1.isExclusiveWith($vo2) || $vo2.isExclusiveWith($vo1) )
+
+	then
+		consequenceBuilder.setRule("R23-1","Promoções não compatíveis");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+		c.setDescription("Promoções conflitantes estão ativadas num mesmo período.");
+		c.addAttribute("Número do Contrato", $contractNo);
+		c.addAttribute("Número do Acesso", $accessNumber);
+		c.addAttribute("Descrição da Promoção 1", $vo1.getDescription());
+		c.addDateAttribute("Data de Ativação 1", $vo1.getActivationDate());
+		c.addDateAttribute("Data de Desativação 1", $vo1.getExpirationDate());
+		c.addAttribute("Descrição da Promoção 2", $vo2.getDescription());
+		c.addDateAttribute("Data de Ativação 2", $vo2.getActivationDate());
+		c.addDateAttribute("Data de Desativação 2", $vo2.getExpirationDate());
+		results.add(c);
+end
+
+
+rule "Regra R23.1B - Verif the active period conflicts"
+	salience 50
+	when
+
+		Account ( $carrierCode : carrierCode  )
+
+		ContractInfoSection( $contractNo : contractNumber,
+			                 $accessNumber : accessNbr )
+
+		$vo1 : PromotionExclusivityByContractVO ( contractNumber == $contractNo,
+												  $actDate : activationDate,
+				     							  expirationDate == null
+												)
+
+		$vo2 : PromotionExclusivityByContractVO ( contractNumber == $contractNo,
+												  activationDate > $actDate
+												)
+
+		eval ( $vo1.isExclusiveWith($vo2) || $vo2.isExclusiveWith($vo1) )
+
+	then
+		consequenceBuilder.setRule("R23-1","Promoções não compatíveis");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+
+		c.setDescription("Promoções conflitantes estão ativadas num mesmo período.");
+		c.addAttribute("Número do Contrato", $contractNo);
+		c.addAttribute("Número do Acesso", $accessNumber);
+		c.addAttribute("Descrição da Promoção 1", $vo1.getDescription());
+		c.addDateAttribute("Data de Ativação 1", $vo1.getActivationDate());
+		c.addNullAttribute("Data de Desativação 1");
+		c.addAttribute("Descrição da Promoção 2", $vo2.getDescription());
+		c.addDateAttribute("Data de Ativação 2", $vo2.getActivationDate());
+		c.addDateAttribute("Data de Desativação 2", $vo2.getExpirationDate());
+		results.add(c);
+end

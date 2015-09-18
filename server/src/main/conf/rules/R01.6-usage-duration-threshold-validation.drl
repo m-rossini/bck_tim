@@ -1,0 +1,251 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+
+import br.com.auster.om.util.UnitCounter;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+/**
+ * RULE # 1.6 Uso abaixo do limite de Duração
+ */
+
+
+/*
+* Constraints for this RULE:
+Duração == Unidade de tempo
+Duração acima que um determinado valor
+Chamada realizada em HOME AREA, Não AD e Não DSL
+*/
+rule "Regra 1-6A"
+	salience 0
+	when
+		#gets the subsection (Parent of TIMUsageDetail)
+		$group : ContractUsageGroupSubsection($secName : sectionName)
+
+		$usage : TIMUsageDetail(
+								$sec : section == $group,
+								$callDate : usageDate,
+								$callTime : usageTime,
+								$callerNumber : channelId,
+								$calledNumber : calledNumber,
+								area == "H",
+								$area : area,
+								type != "AD",
+								svcId != "DSL",
+								$amt : totalAmount,
+								$dur : usageDuration -> ( $dur.getSeconds() > 120*60 && $dur.getType().equals(UnitCounter.TIME_COUNTER)  ),
+								$roudedDur : roundedDuration,
+								$type : type ,
+								$svcID : serviceDescription,
+								voiceUsage  == true,
+								$carrierCode : carrierCode
+		)
+
+		Account($accNo : accountNumber)
+	then
+		consequenceBuilder.setRule("R01-6","Limite de Duração para Eventos");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso em HOMING com duração superior ao limite");
+
+        c.addDateAttribute("Data da Chamada", $callDate);
+        c.addTimeAttribute("Hora da Chamada", $callTime);
+        c.addAttribute("Duração do Uso", $roudedDur.toString());
+        c.addAttribute("Número de Origem", $callerNumber);
+        c.addAttribute("Número de Destino", $calledNumber);
+        c.addAttribute("Serviço", $svcID);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addAttribute("Tipo do Uso", $type);
+        c.addAttribute("Área do Uso",  $area);
+
+        results.add(c);
+end
+
+/*
+* Constraints for this RULE:
+Duração == Unidade de tempo
+Duração acima que um determinado valor
+Chamada realizada FORA da HOME AREA,Não AD e Não DSL
+*/
+rule "Regra 1-6B"
+	salience 0
+	when
+		#gets the subsection (Parent of TIMUsageDetail)
+		$group : ContractUsageGroupSubsection($secName : sectionName)
+
+		$usage : TIMUsageDetail(
+								$sec : section == $group,
+								$callDate : usageDate,
+								$callTime : usageTime,
+								$callerNumber : channelId,
+								$calledNumber : calledNumber,
+								area != "H",
+								$area : area,
+								type != "AD",
+								svcId != "DSL",
+								$amt : totalAmount,
+								$dur : usageDuration -> ( $dur.getSeconds() > 120*60 && $dur.getType().equals(UnitCounter.TIME_COUNTER)  ),
+								$roudedDur : roundedDuration,
+								$type : type ,
+								$svcID : serviceDescription,
+								voiceUsage  == true,
+								$carrierCode : carrierCode
+		)
+
+		Account($accNo : accountNumber)
+	then
+		consequenceBuilder.setRule("R01-6","Limite de Duração para Eventos");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso em ROAMING com duração superior ao limite");
+
+        c.addDateAttribute("Data da Chamada", $callDate);
+        c.addTimeAttribute("Hora da Chamada", $callTime);
+        c.addAttribute("Duração do Uso", $roudedDur.toString());
+        c.addAttribute("Número de Origem", $callerNumber);
+        c.addAttribute("Número de Destino", $calledNumber);
+        c.addAttribute("Serviço", $svcID);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addAttribute("Tipo do Uso", $type);
+        c.addAttribute("Área do Uso",  $area);
+
+        results.add(c);
+end
+
+/*
+* Constraints for this RULE:
+Duração == Unidade de tempo
+Duração ABAIXO que um determinado valor
+Chamada realizada em HOME AREA, Não AD e Não DSL
+*/
+rule "Regra 1-6C"
+	salience 0
+	when
+		#gets the subsection (Parent of TIMUsageDetail)
+		$group : ContractUsageGroupSubsection($secName : sectionName)
+
+		$usage : TIMUsageDetail(
+								$sec : section == $group,
+								$callDate : usageDate,
+								$callTime : usageTime,
+								$callerNumber : channelId,
+								$calledNumber : calledNumber,
+								area == "H",
+								$area : area,
+								type != "AD",
+								svcId != "DSL",
+								$amt : totalAmount,
+								$dur : usageDuration -> ( $dur.getSeconds() < 3 && $dur.getType().equals(UnitCounter.TIME_COUNTER)  ),
+								$roudedDur : roundedDuration,
+								$type : type ,
+								$svcID : serviceDescription,
+								voiceUsage  == true,
+								$carrierCode : carrierCode
+		)
+
+		Account($accNo : accountNumber)
+	then
+		consequenceBuilder.setRule("R01-6","Limite de Duração para Eventos");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso em HOMING com duração inferior ao limite");
+
+        c.addDateAttribute("Data da Chamada", $callDate);
+        c.addTimeAttribute("Hora da Chamada", $callTime);
+        c.addAttribute("Duração do Uso", $roudedDur.toString());
+        c.addAttribute("Número de Origem", $callerNumber);
+        c.addAttribute("Número de Destino", $calledNumber);
+        c.addAttribute("Serviço", $svcID);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addAttribute("Tipo do Uso", $type);
+        c.addAttribute("Área do Uso",  $area);
+
+        results.add(c);
+end
+
+/*
+* Constraints for this RULE:
+Duração == Unidade de tempo
+Duração ABAIXO que um determinado valor
+Chamada realizada FORA da HOME AREA,Não AD e Não DSL
+*/
+rule "Regra 1-6D"
+	salience 0
+	when
+		#gets the subsection (Parent of TIMUsageDetail)
+		$group : ContractUsageGroupSubsection($secName : sectionName)
+
+		$usage : TIMUsageDetail(
+								$sec : section == $group,
+								$callDate : usageDate,
+								$callTime : usageTime,
+								$callerNumber : channelId,
+								$calledNumber : calledNumber,
+								area != "H",
+								$area : area,
+								type != "AD",
+								svcId != "DSL",
+								$amt : totalAmount,
+								$dur : usageDuration -> ( $dur.getSeconds() < 3 && $dur.getType().equals(UnitCounter.TIME_COUNTER)  ),
+								$roudedDur : roundedDuration,
+								$type : type ,
+								$svcID : serviceDescription,
+								voiceUsage  == true,
+								$carrierCode : carrierCode
+		)
+
+		Account($accNo : accountNumber)
+	then
+		consequenceBuilder.setRule("R01-6","Limite de Duração para Eventos");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso em ROAMING com duração inferior ao limite");
+
+        c.addDateAttribute("Data da Chamada", $callDate);
+        c.addTimeAttribute("Hora da Chamada", $callTime);
+        c.addAttribute("Duração do Uso", $roudedDur.toString());
+        c.addAttribute("Número de Origem", $callerNumber);
+        c.addAttribute("Número de Destino", $calledNumber);
+        c.addAttribute("Serviço", $svcID);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addAttribute("Tipo do Uso", $type);
+        c.addAttribute("Área do Uso",  $area);
+
+        results.add(c);
+end

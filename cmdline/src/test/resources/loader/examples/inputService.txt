@@ -1,0 +1,21 @@
+Plano Familia AM-GAM;1;1-Servicos Basicos;Adicional por chamada;0;;0
+Plano Familia AM-GAM;1;1-Servicos Basicos;Fax;0;;0
+Plano Familia AM-GAM;1;1-Servicos Basicos;Serviço de Voz;36,9;;0
+Plano Familia AM-GAM;1;1-Servicos Basicos;TIM Torpedo Originado;0;;0
+Plano Familia AM-GAM;1;1-Servicos Basicos;TIM Torpedo Recebido;0;;0
+Plano Familia AM-GAM;1;2-Servicos de Dados;TIM Connect / TIM Wap;0;;0
+Plano Familia AM-GAM;1;3-Servicos Adicionais;Bloqueio caixa postal;0;;0
+Plano Familia AM-GAM;1;3-Servicos Adicionais;Bloqueio Chamadas Rec a Cobrar;4,99;;4
+Plano Familia AM-GAM;1;3-Servicos Adicionais;Bloqueio Gestão do Consumo;0;;0
+Plano Familia AM-GAM;1;3-Servicos Adicionais;Bloqueio realização chamadas;0;;0
+Plano Light 40-GAM;8;1-Servicos Basicos;Adicional por chamada;0;;0
+Plano Light 40-GAM;8;1-Servicos Basicos;Fax;0;;0
+Plano Light 40-GAM;8;1-Servicos Basicos;Serviço de Voz;0;;0
+Plano Light 40-GAM;8;1-Servicos Basicos;TIM Torpedo Originado;0;;0
+Plano Light 40-GAM;8;3-Servicos Adicionais;Bloq. Chamadas Internacionais;0;;2,9
+Plano Light 40-GAM;8;3-Servicos Adicionais;Bloq. Chamadas Longa Distância;0;;2,9
+Plano Nosso Grupo AM-GAM;6;Servicos Longa Distancia;41 Total;0;;0
+Plano Nosso Grupo AM-GAM;6;1-Servicos Basicos;Adicional por chamada;0;;0
+Plano Nosso Grupo AM-GAM;6;1-Servicos Basicos;Fax;0;;0
+Plano Nosso Grupo AM-GAM;6;1-Servicos Basicos;Serviço de Voz;13,54;;0
+Plano Nosso Grupo AM-GAM;6;1-Servicos Basicos;TIM Torpedo Originado;0;;0

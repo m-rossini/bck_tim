@@ -1,0 +1,22 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.om.filter.request.BillcheckoutRequestWrapper;
+import br.com.auster.om.invoice.Account;
+
+global java.util.List results;
+
+
+
+rule "Add custCodeWithSlashes attribute into Request"
+	salience 100
+	when
+
+		BillcheckoutRequestWrapper ( $request : request )
+
+		Account ( $custCode : accountNumber )
+
+	then
+		String custCodeWithSlashes = $custCode.replaceAll("\\.", "/");
+		$request.getAttributes().put("custCodeWithSlashes", custCodeWithSlashes);
+end
+

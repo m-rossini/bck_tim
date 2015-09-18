@@ -1,0 +1,34 @@
+<?xml version = "1.0" encoding = "UTF-8"?>
+
+<root>
+	<sql:configuration xmlns:sql="http://www.auster.com.br/common/sql/">
+		<sql:statements>
+
+			<sql:statement name="preVoiceInsertQuery">
+				<sql:query>
+					TRUNCATE TABLE TEMP_USAGE_RATES
+ 				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="preMegatimInsertQuery">
+				<sql:query>
+					TRUNCATE TABLE TEMP_MEGATIM_PARAMS
+ 				</sql:query>
+			</sql:statement>
+
+			<sql:statement name="preMegatimServicesInsertQuery">
+				<sql:query>
+					TRUNCATE TABLE TEMP_MEGATIM_SERVICES
+ 				</sql:query>
+			</sql:statement>
+			
+			<sql:statement name="preMeuSonhoInsertQuery">
+				<sql:query>
+					TRUNCATE TABLE MEUSONHO_RATES
+ 				</sql:query>
+			</sql:statement>
+			
+
+		</sql:statements>
+	</sql:configuration>
+</root>

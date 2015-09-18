@@ -1,0 +1,54 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.filter.request.BillcheckoutRequestWrapper;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.tim.billcheckout.util.CustcodeHelper;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+
+rule "Regra R28.8 - Different Corporate Due Dates For Same Structure"
+	salience 70
+	when
+
+		BillcheckoutRequestWrapper ( $request : request )
+
+		$invoice : Invoice (
+				  $dueDate : dueDate,
+		          $cutDate : cycleEndDate )
+
+		Account ( $custCode : accountNumber -> (CustcodeHelper.isCorporateCustcodeInSameDuedate($custCode, $dueDate, $request.getTransactionId()) == false),
+				  $acctype : accountType == "L",
+		          $carrierCode : carrierCode
+		        )
+	then
+		consequenceBuilder.setRule("R28-8","Vencimento de Corp. Diferente");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Foram encontradas datas de vencimento diferentes entre contas corporativas de uma mesma estrutura.");
+		c.addAttribute("Raiz do CustCode", $custCode.substring(0, CustcodeHelper.getRootCorporateCustcodeIndex($custCode)));
+		c.addDateAttribute("Vencimento Correto", CustcodeHelper.getCorporateDueDate($custCode), "dd/MM/yyyy");
+		c.addDateAttribute("Vencimento Encontrado", $dueDate, "dd/MM/yyyy");
+		results.add(c);
+end

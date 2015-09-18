@@ -1,0 +1,32 @@
+<?xml version='1.0' encoding='utf-8'?>
+
+<hibernate-configuration>
+
+    <session-factory>
+
+		<property name="show_sql">false</property>
+		<property name="use_outer_join">true</property>
+		<property name="cache.use_second_level_cache">false</property>
+        <property name="jdbc.batch_size">1000</property>
+        <property name="use_scrollable_resultset">false</property>
+
+		<property name="connection.driver_class">org.apache.commons.dbcp.PoolingDriver</property>
+		<property name="connection.url">jdbc:apache:commons:dbcp:/sql/billcheckoutdb</property>
+		<property name="connection.pool_size">0</property>
+
+		<property name="dialect">org.hibernate.dialect.Oracle9Dialect</property>
+
+        <mapping resource="br/com/auster/billcheckout/model/CycleDates.hbm.xml"/>
+		<mapping resource="br/com/auster/billcheckout/thresholds/CustomerType.hbm.xml"/>
+
+        <mapping resource="br/com/auster/billcheckout/thresholds/UsageThreshold.hbm.xml"/>
+        <mapping resource="br/com/auster/billcheckout/thresholds/NFThreshold.hbm.xml"/>
+        <mapping resource="br/com/auster/billcheckout/thresholds/OCCThreshold.hbm.xml"/>
+        <mapping resource="br/com/auster/billcheckout/thresholds/InvoiceThreshold.hbm.xml"/>
+
+        <mapping resource="br/com/auster/billcheckout/consequence/telco/GeographicDimension.hbm.xml"/>
+        <mapping resource="br/com/auster/billcheckout/consequence/telco/CarrierDimension.hbm.xml"/>
+
+    </session-factory>
+
+</hibernate-configuration>

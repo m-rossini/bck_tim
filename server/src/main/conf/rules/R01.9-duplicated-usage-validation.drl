@@ -1,0 +1,329 @@
+package br.com.auster.tim.billchekout;
+
+import java.util.Date;
+import java.util.Iterator;
+import java.util.Set;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+
+import br.com.auster.common.datastruct.IntRangeList;
+import br.com.auster.common.datastruct.IntRangeList.IntRangeNode;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+
+import br.com.auster.tim.billcheckout.util.UsageOverlapComparator;
+import br.com.auster.tim.om.invoice.ContractInfoSection;;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+
+import br.com.auster.common.lang.NamedHashMap;
+import br.com.auster.common.rules.GlobalForLog;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+
+
+function boolean areEventsOverlapped(IntRangeNode _previous, IntRangeNode _current) {
+
+	boolean result = true;
+	TIMUsageDetail previousEvent = (TIMUsageDetail) _previous.getValue();
+	TIMUsageDetail currentEvent = (TIMUsageDetail) _current.getValue();
+	// checking if both events have the same start date/time and duration
+	try {
+		// since we know previous start is < current start, this is the only condition needed.
+		result = result && (_previous.getTo() > _current.getFrom());
+		//result = result && currentEvent.getCalledNumber().equals(previousEvent.getCalledNumber());
+		//result = result && currentEvent.getSvcId().equals(previousEvent.getSvcId());
+	} catch (NullPointerException npe) {
+		GlobalForLog.log("DEBUG", "NullPointer while handing areEventsOverlapping()" + npe.getMessage());
+	}
+	return result;
+}
+
+function boolean areEventsDuplicated(IntRangeNode _previous, IntRangeNode _current) {
+
+	boolean result = true;
+	TIMUsageDetail previousEvent = (TIMUsageDetail) _previous.getValue();
+	TIMUsageDetail currentEvent = (TIMUsageDetail) _current.getValue();
+	// checking if both events have the same start date/time and duration
+	try {
+		// since we know previous start is < current start, this is the only condition needed.
+		result = result && (_previous.getFrom() == _current.getFrom()) && (_previous.getTo() == _current.getTo());
+		result = result && currentEvent.getCalledNumber().equals(previousEvent.getCalledNumber());
+		result = result && currentEvent.getSvcId().equals(previousEvent.getSvcId());
+	} catch (NullPointerException npe) {
+		GlobalForLog.log("DEBUG", "NullPointer while handing areEventsOverlapping()" + npe.getMessage());
+	}
+	return result;
+}
+
+function boolean isWarnOnly(TIMUsageDetail _detail) {
+	return ((_detail != null) && (_detail.getOriginCity() != null) &&
+	        (_detail.getDestinationCity() != null) &&
+	        (!_detail.getOriginCity().equals(_detail.getDestinationCity())));
+}
+
+function String getUsageTypeChar(TIMUsageDetail _detail) {
+
+   if (_detail.isDataUsage()) {
+      return "D";
+   } else if (_detail.isEventUsage()) {
+      return "E";
+   } else if (_detail.isVoiceUsage()) {
+      return "V";
+   }
+   return null;
+}
+
+
+/**
+ * RULE #1.9 / #1.13 - Searches for duplicated/overlap usage details.
+ */
+
+/**
+ *
+ */
+rule "R01.9 -  Step 1 - Building IntRangeLists for customer"
+	salience 90
+	when
+		not (NamedHashMap(name == "R01.9-RangeLists"))
+	then
+		assert(new NamedHashMap("R01.9-RangeLists"));
+end
+
+
+/**
+ * This second step puts a map for each contract, containing 3 IntRangeList instances:
+ *   one for each type of event detail.
+ */
+rule "R01.9 -  Step 2 - Building IntRangeLists for each contract"
+	salience 80
+	when
+		$map : NamedHashMap(name == "R01.9-RangeLists")
+
+		ContractInfoSection($contractNo : contractNumber)
+
+	then
+		HashMap contractMap = new HashMap();
+		contractMap.put( "D", new IntRangeList() );
+		contractMap.put( "V", new IntRangeList() );
+		contractMap.put( "E", new IntRangeList() );
+		// adding contract map into NamedHashMap
+		$map.put($contractNo, contractMap);
+end
+
+
+/**
+ * This step add each UsageDetail to the correct IntRangeList for the related Contract.
+ * Usages of types AC | AD | DSL | VCR Calls are discarded.
+ *
+ * NOTE: Check the IMPORTANT note in $section binding to undestand why we dont directly
+ * 		link a UsageDetail with the ContractInfo using the accessNumber information.
+ */
+rule "R01.9 -  Step 3 - Adding usage details for each contract"
+	salience 60
+	when
+		# Map of IntRangeLists for all contracts of current customer
+		$map : NamedHashMap(name == "R01.9-RangeLists")
+
+		#gets the usage attached to above subsection and contract section with
+		# the business condition
+		$usage : TIMUsageDetail ( type != "AC", type != "AD", type != "DSL", type != "VCR",
+								  $endDate : usageEndDatetime,
+								  $startDate : datetime != null,
+								  $contractNo : contractNumber )
+
+    then
+		Map contractMap = (HashMap) $map.get($contractNo);
+		if (contractMap != null) {
+	    	IntRangeList calls = (IntRangeList) contractMap.get(getUsageTypeChar($usage));
+			// ignoring if there is no RangeMap for current section
+	        if (calls != null) {
+	        	Date endDate = $endDate;
+				if (endDate == null) {
+			        endDate = $startDate;
+			    }
+
+				int startInt = (int) ($startDate.getTime() / 1000);;
+				int endInt = (int) (endDate.getTime() / 1000);
+			    //GlobalForLog.log("DEBUG", "Adding call [" + $startDate + "/" + "/" + endDate + "/" + getUsageTypeChar($usage) + "] from " + $startDate.getTime()+ " (as " + startInt + ") until " + endDate.getTime() + " ( as "+ endInt);
+			    calls.add(startInt, endInt, $usage );
+			}
+		}
+end
+
+
+
+rule "R01.9 -  Step 4 - Building consequences"
+	salience 10
+	when
+		# Map of IntRangeLists for all contracts of current customer
+		$map : NamedHashMap(name == "R01.9-RangeLists")
+
+		#gets the contract section
+		$contract : ContractInfoSection(
+			$phone : accessNbr,
+			$carrierCode : carrierCode,
+			$contractNumber : contractNumber)
+	then
+		String[] types = { "V", "E", "D" };
+   		String[] typesNamed = { "Voz", "Eventos", "Dados" };
+		Map contractMap = (Map) $map.get($contractNumber);
+		if (contractMap != null) {
+			for (int idx =0 ; idx < types.length; idx++) {
+				String typeId = types[idx];
+				IntRangeList overlaps = (IntRangeList) contractMap.get(types[idx]);
+				// finding the overlap intervals
+				List overlapEvents = overlaps.getSortedOverlaps(new UsageOverlapComparator());
+				// if previous event was added as overlap or duplicated
+				boolean previousWasAddedAsOverlap = false;
+				boolean previousWasAddedAsDuplicate = false;
+				// counters for overlaps and duplcates
+				int overlapCounter = 0;
+				int duplicateCounter = 0;
+				// to handle the previous and current overlap node
+				IntRangeNode previous;
+				IntRangeNode current = null;
+				TIMUsageDetail detail = null;
+				// walking through the overlapped events
+				for (Iterator it = overlapEvents.iterator(); it.hasNext(); ) {
+					previous = current;
+					current = (IntRangeNode) it.next();
+					// skipping first iteraction
+					if (previous == null) { continue; }
+					if (areEventsDuplicated(previous, current)) {
+						duplicateCounter++;
+						if (! previousWasAddedAsDuplicate) {
+
+							detail = (TIMUsageDetail) previous.getValue();
+
+							consequenceBuilder.setRule("R01-9A", "Detalhe de Uso duplicado");
+							consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+							consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+							consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+							consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+							consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+							TelcoConsequence cd = (TelcoConsequence) consequenceBuilder.getConsequence();
+							cd.setDescription("Detalhes de Uso de " + typesNamed[idx] + " Duplicados");
+					        cd.addAttribute("Número do Contrato", $contractNumber);
+					        cd.addAttribute("Número de Acesso", $phone);
+					        cd.addAttribute("Número Chamado",detail.getCalledNumber());
+					        cd.addAttribute("Serviço", detail.getServiceDescription());
+					        cd.addDateAttribute("Data da Chamada", detail.getUsageDate());
+					        cd.addTimeAttribute("Hora da Chamada", detail.getUsageTime());
+							cd.addAttribute("Duração da Chamada", detail.getUsageDuration());
+
+					        results.add(cd);
+						}
+						detail = (TIMUsageDetail) current.getValue();
+
+						consequenceBuilder.setRule("R01-9A", "Detalhe de Uso duplicado");
+						consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+						consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+						consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+						consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+						consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+						TelcoConsequence cd = (TelcoConsequence) consequenceBuilder.getConsequence();
+						cd.setDescription("Detalhes de Uso de " + typesNamed[idx] + " Duplicados");
+				        cd.addAttribute("Número do Contrato", $contractNumber);
+				        cd.addAttribute("Número de Acesso", $phone);
+				        cd.addAttribute("Número Chamado",detail.getCalledNumber());
+				        cd.addAttribute("Serviço", detail.getServiceDescription());
+				        cd.addDateAttribute("Data da Chamada", detail.getUsageDate());
+				        cd.addTimeAttribute("Hora da Chamada", detail.getUsageTime());
+						cd.addAttribute("Duração da Chamada", detail.getUsageDuration());
+
+				        results.add(cd);
+
+						previousWasAddedAsOverlap = false;
+						previousWasAddedAsDuplicate = true;
+
+					} else if ((idx == 0) && areEventsOverlapped(previous, current)) {
+						// We only check for VOICE overlaps
+						overlapCounter++;
+						if (! previousWasAddedAsOverlap) {
+
+							detail = (TIMUsageDetail) previous.getValue();
+
+							consequenceBuilder.setRule("R01-13A", "Detalhes de Uso sobreposto");
+							consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+							consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+							consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+							consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+							consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+							TelcoConsequence cd = (TelcoConsequence) consequenceBuilder.getConsequence();
+							cd.setDescription("Detalhes de Uso de " + typesNamed[idx] + " Sobrepostos");
+					        cd.addAttribute("Número do Contrato", $contractNumber);
+					        cd.addAttribute("Número de Acesso", $phone);
+					        cd.addAttribute("Número Chamado",detail.getCalledNumber());
+					        cd.addAttribute("Serviço", detail.getServiceDescription());
+					        cd.addDateAttribute("Data da Chamada", detail.getUsageDate());
+					        cd.addTimeAttribute("Hora da Chamada", detail.getUsageTime());
+							cd.addAttribute("Duração da Chamada", detail.getUsageDuration());
+
+							if (isWarnOnly(detail)) {
+								cd.addAttribute("Origem e Destino Diferem", "Sim");
+							} else {
+								cd.addAttribute("Origem e Destino Diferem", "Não");
+							}
+
+							results.add(cd);
+						}
+
+						detail = (TIMUsageDetail) current.getValue();
+
+						consequenceBuilder.setRule("R01-13A", "Detalhes de Uso sobreposto");
+						consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+						consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+						consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+						consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+						consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+						TelcoConsequence cd = (TelcoConsequence) consequenceBuilder.getConsequence();
+						cd.setDescription("Detalhes de Uso de " + typesNamed[idx] + " Sobrepostos");
+				        cd.addAttribute("Número do Contrato", $contractNumber);
+				        cd.addAttribute("Número de Acesso", $phone);
+				        cd.addAttribute("Número Chamado",detail.getCalledNumber());
+				        cd.addAttribute("Serviço", detail.getServiceDescription());
+				        cd.addDateAttribute("Data da Chamada", detail.getUsageDate());
+				        cd.addTimeAttribute("Hora da Chamada", detail.getUsageTime());
+						cd.addAttribute("Duração da Chamada", detail.getUsageDuration());
+
+						if (isWarnOnly(detail)) {
+							cd.addAttribute("Origem e Destino Diferem", "Sim");
+						} else {
+							cd.addAttribute("Origem e Destino Diferem", "Não");
+						}
+
+						results.add(cd);
+
+						previousWasAddedAsOverlap = true;
+						previousWasAddedAsDuplicate = false;
+					} else {
+						// this means we found two events that have no overlapping-duplicated relation between themselves
+						previousWasAddedAsOverlap = false;
+						previousWasAddedAsDuplicate = false;
+					} // end of "if (areEventsDuplicated(previous, current)) {"
+				} // end of "for (Iterator it = overlapEvents.iterator(); it.hasNext(); ) {"
+			} // end of "for (int idx =0 ; idx < types.length; idx++) {"
+		} // end of "if (contractMap != null) {"
+end
+
+

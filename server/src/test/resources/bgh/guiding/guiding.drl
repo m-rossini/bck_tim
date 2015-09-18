@@ -1,0 +1,223 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.om.util.UnitCounter;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+import br.com.auster.tim.om.invoice.TIMUsageGuidingFlag;
+import br.com.auster.tim.billcheckout.tariff.MicrocellMappingVO;
+
+import br.com.auster.common.rules.GlobalForLog;
+import br.com.auster.tim.billcheckout.util.GuidingHelper;
+import java.util.List;
+
+global br.com.auster.tim.billcheckout.param.ServicesCache serviceCache;
+global br.com.auster.tim.billcheckout.param.PlansCache planCache;
+global br.com.auster.tim.billcheckout.param.TariffZoneCache tariffZoneCache;
+global br.com.auster.tim.billcheckout.param.UsageGroupCache usageGroupCache;
+global br.com.auster.tim.billcheckout.param.UsageGroupLDCache usageGroupLDCache;
+global br.com.auster.tim.billcheckout.param.RateTimeZoneCache rateZoneCache;
+global br.com.auster.tim.billcheckout.param.TariffZoneUsageGroupCache tariffZoneUsageGroupCache;
+global br.com.auster.tim.billcheckout.param.ServicePlanCache servicePlanCache;
+
+global br.com.auster.tim.billcheckout.tariff.MicrocellMappingCache mcMapping;
+
+### The GLOBALs are the reason why we have diff guiding file for testcases
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+function long days2Milliseconds(int days) {
+	final long MILLISEC_PER_DAY = 86400000;
+  	return days*MILLISEC_PER_DAY;
+}
+
+rule "guiding"
+	salience 90
+	when
+		$usage : TIMUsageDetail( $carrierCode : carrierCode,
+								 $localCall : localCall
+							   )
+
+		// THIS VALIDATION IS NOT NEEDED DURING TEST CASES
+		// Keep all this commented so we why it's not set for test cases
+
+		// BillcheckoutRequestWrapper ( $request : request )
+
+	then
+		// building helper instance
+		GuidingHelper helper = GuidingHelper.getInstance(serviceCache, planCache, tariffZoneCache,
+														 rateZoneCache, usageGroupCache, servicePlanCache,
+		                                                 tariffZoneUsageGroupCache, usageGroupLDCache);
+		// contract & usage group information
+		ContractUsageGroupSubsection usageGroup = (ContractUsageGroupSubsection) $usage.getSection();
+		ContractInfoSection contractInfo = (ContractInfoSection) usageGroup.getParentSection();
+		// this usagage guiding flags
+		TIMUsageGuidingFlag flags = $usage.getGuidingFlags();
+		// now, really executing the guiding
+		flags.setServiceExists(helper.validateDetailService($usage));
+		flags.setTariffZoneExists(helper.validateDetailTariffZone($usage));
+		flags.setRateZoneExists(helper.validateDetailRateZone($usage));
+		flags.setRateplanExists(helper.validateRateplan(contractInfo));
+		flags.setUsageGroupExists(helper.validateUsageGroup(usageGroup));
+		flags.setPlanContainsService(helper.isServiceAllowedInPlan($usage, contractInfo));
+
+		// finally, detect if this usage has cobilling
+		if (!"0".equals($carrierCode) && !"41".equals($carrierCode)) {
+			flags.setCobilling(true);
+		}
+end
+
+/**
+ * Este regra é necessária para corrigir o tipo de uso, para tariff zone GEN.
+ */
+rule "Correct GEN tariff zone"
+	salience 50
+	when
+		$usage : TIMUsageDetail( class == "GEN",
+		                         $duration : usageDuration -> ( UnitCounter.UNIT_COUNTER.equals($duration.getType()) )
+		                       )
+	then
+		$usage.markAsEventUsage();
+end
+
+
+/**
+ * Este regra é necessária para corrigir o tipo de uso, para tariff zone CRIIN ou CRIOU.
+ */
+rule "Correct CRIIN tariff zone"
+	salience 50
+	when
+		$usage : TIMUsageDetail( class == "CRIIN",
+								 type != "DSL",
+								 $duration : usageDuration
+		                       )
+	then
+		if ( UnitCounter.UNIT_COUNTER.equals($duration.getType()) ) {
+			$usage.markAsEventUsage();
+		} else if ( UnitCounter.DATA_COUNTER.equals($duration.getType()) ) {
+			$usage.markAsDataUsage();
+		} else if ( UnitCounter.TIME_COUNTER.equals($duration.getType()) ) {
+			$usage.markAsVoiceUsage();
+		}
+end
+
+rule "Correct CRIOU tariff zone"
+	salience 50
+	when
+		$usage : TIMUsageDetail( class == "CRIOU",
+								 type != "DSL",
+								 $duration : usageDuration
+		                       )
+	then
+		if ( UnitCounter.UNIT_COUNTER.equals($duration.getType()) ) {
+			$usage.markAsEventUsage();
+		} else if ( UnitCounter.DATA_COUNTER.equals($duration.getType()) ) {
+			$usage.markAsDataUsage();
+		} else if ( UnitCounter.TIME_COUNTER.equals($duration.getType()) ) {
+			$usage.markAsVoiceUsage();
+		}
+end
+
+/**
+ * GUIDING - EXPIRED/LATE USAGE
+ *
+ * Define se o uso está expirado (decurso de prazo), ou se é anterior ao ciclo
+ * e pode ser cobrado por não ter expirado (late call).
+ */
+rule "EXPIRED"
+	salience 50
+	when
+		Invoice( $due : dueDate -> ($due != null),
+				 $base : cycleStartDate -> ($base != null) )
+
+		$usage : TIMUsageDetail(
+			usageDate != null,
+			$date : usageDate,
+			$flags : guidingFlags,
+			$LDICall : LDICall,
+			$LDNCall : LDNCall,
+			$localCall : localCall,
+			$mobileFlag : mobile )
+
+	then
+		int threshold = -1;
+		if ($mobileFlag.booleanValue()) {
+			if ($localCall.booleanValue()) {
+				threshold = 65;
+			} else if($LDNCall.booleanValue()) {
+				threshold = 95;
+			} else if ($LDICall.booleanValue()) {
+				threshold = 155;
+			}
+		}  else {
+			if ($localCall.booleanValue()) {
+				threshold = 60;
+			} else if ($LDNCall.booleanValue()) {
+				threshold = 90;
+			} else if ($LDICall.booleanValue()) {
+				threshold = 120;
+			}
+		}
+
+		if (threshold >= 0) {
+			if (($due.getTime() - $date.getTime()) > days2Milliseconds(threshold)) {
+				$flags.setExpired(true);
+			} else if ($base.getTime() > $date.getTime()) {
+				$flags.setLate(true);
+			}
+		}
+end
+
+/**
+ * Esta regra "seta" o atributo MicroCellDesc como nulo caso no arquivo
+ * contenha o valor 'U', pois as regras esperam "null" quando não tem
+ * valor de micro-célula.
+ */
+rule "Set MCDesc to null if 'U' value"
+	salience 50
+	when
+
+		$usage : TIMUsageDetail( microCellDesc == "U" )
+
+	then
+
+		$usage.setMicroCellDesc(null);
+
+end
+
+rule "Set MCScalFact to null if empty"
+	salience 50
+	when
+
+		$usage : TIMUsageDetail( microCellScalingFactor != null,
+								 $m : microCellScalingFactor -> ($m.trim().length() == 0)
+							   )
+
+	then
+		$usage.setMicroCellScalingFactor(null);
+
+end
+
+rule "Regra 4.4 - Find MC Short Description"
+	salience 40
+	when
+		$usage : TIMUsageDetail ( $m : microCellScalingFactor != null,
+								  microCellDesc == null,
+					     		  amountBeforePromotions > 0,
+						 		  $discountAmount : discountAmount > 0,
+						 		  $tariffZoneDesc : tariff
+					   			)
+	then
+	
+	MicrocellMappingVO vo = (MicrocellMappingVO)mcMapping.getFromCache( MicrocellMappingVO.createKey($tariffZoneDesc) );
+	if (vo != null) {
+		GlobalForLog.log("INFO", "Got MC " + vo.getMicrocellShortDesc() + " for TZ <"+   $tariffZoneDesc + ">");
+		$usage.setMicroCellDesc(vo.getMicrocellShortDesc());
+	} else {
+		GlobalForLog.log("INFO", "No MC for TZ <" + $tariffZoneDesc + ">");
+		$usage.setMicroCellDesc(null);
+	}
+end

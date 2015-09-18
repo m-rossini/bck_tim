@@ -1,0 +1,227 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.tim.om.invoice.TIMAccount;
+import br.com.auster.tim.om.invoice.PaystubSection;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+
+function boolean areFieldsEqual(String _field1, String _field2) {
+	// if both are null, then they are "equal"
+	if ((_field1 == null) && (_field2 == null)) {
+		return true;
+	}
+	// else, check for nulls in one of then
+	if (_field1 == null) {
+		return _field2.equals(_field1);
+	}
+	return _field1.equals(_field2);
+}
+
+/**
+ * R14.5A - Checking carrier name in Header against PaystubInformation
+ */
+rule "R14.5A - Check Carrier Name"
+when
+	TIMAccount (
+			$carrierAtAccount : carrierName,
+			$carrierCode : carrierCode
+			)
+
+	PaystubSection (
+			$carrierAtPaystub : carrierName != $carrierAtAccount
+			)
+then
+		consequenceBuilder.setRule("R14-5","Dados da Operadora divergente");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("O nome da operadora no cabeçalho da fatura não confere com a mesma informação na ficha de arrecadação");
+
+        c.addAttribute("Campo Validado", "Nome da Operadora");
+        c.addAttribute("Na Fatura", $carrierAtAccount);
+        c.addAttribute("Na Ficha de Arrecadação", $carrierAtPaystub);
+        results.add(c);
+end
+
+/**
+ * R14.5B - Checking carrier street in Header against PaystubInformation
+ */
+rule "R14.5B - Check Carrier Street"
+when
+	TIMAccount (
+			$carrierAtAccount : carrierAddress,
+			$carrierCode : carrierCode
+			)
+
+	PaystubSection (
+			$carrierAtPaystub : carrierAddress
+			)
+
+	eval (! areFieldsEqual($carrierAtAccount.getAddressStreet(), $carrierAtPaystub.getAddressStreet()) )
+
+then
+		consequenceBuilder.setRule("R14-5","Dados da Operadora divergente");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("O nome da rua no cabeçalho da fatura não confere com a mesma informação na ficha de arrecadação");
+
+        c.addAttribute("Campo Validado", "Nome da Rua");
+        c.addAttribute("Na Fatura", $carrierAtAccount.getAddressStreet());
+        c.addAttribute("Na Ficha de Arrecadação", $carrierAtPaystub.getAddressStreet());
+        results.add(c);
+end
+
+/**
+ * R14.5C - Checking carrier street number in Header against PaystubInformation
+ */
+rule "R14.5C - Check Carrier Street Number"
+when
+	TIMAccount (
+			$carrierAtAccount : carrierAddress,
+			$carrierCode : carrierCode
+			)
+
+	PaystubSection (
+			$carrierAtPaystub : carrierAddress
+			)
+
+	eval (! areFieldsEqual($carrierAtAccount.getAddressNumber(), $carrierAtPaystub.getAddressNumber()) )
+
+then
+		consequenceBuilder.setRule("R14-5","Dados da Operadora divergente");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("O número no endereço no cabeçalho da fatura não confere com a mesma informação na ficha de arrecadação");
+
+        c.addAttribute("Campo Validado", "Número no Endereço");
+        c.addAttribute("Na Fatura", $carrierAtAccount.getAddressNumber());
+        c.addAttribute("Na Ficha de Arrecadação", $carrierAtPaystub.getAddressNumber());
+        results.add(c);
+end
+
+/**
+ * R14.5D - Checking carrier street zip in Header against PaystubInformation
+ */
+rule "R14.5D - Check Carrier Street ZIP"
+when
+	TIMAccount (
+			$carrierAtAccount : carrierAddress,
+			$carrierCode : carrierCode
+			)
+
+	PaystubSection (
+			$carrierAtPaystub : carrierAddress
+			)
+
+	eval (! areFieldsEqual($carrierAtAccount.getPostalCode(), $carrierAtPaystub.getPostalCode()) )
+
+then
+		consequenceBuilder.setRule("R14-5","Dados da Operadora divergente");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("O CEP no cabeçalho da fatura não confere com a mesma informação na ficha de arrecadação");
+
+        c.addAttribute("Campo Validado", "CEP");
+        c.addAttribute("Na Fatura", $carrierAtAccount.getPostalCode());
+        c.addAttribute("Na Ficha de Arrecadação", $carrierAtPaystub.getPostalCode());
+        results.add(c);
+end
+
+/**
+ * R14.5E - Checking carrier city in Header against PaystubInformation
+ */
+rule "R14.5E - Check Carrier City"
+when
+	TIMAccount (
+			$carrierAtAccount : carrierAddress,
+			$carrierCode : carrierCode
+			)
+
+	PaystubSection (
+			$carrierAtPaystub : carrierAddress
+			)
+
+	eval (! areFieldsEqual($carrierAtAccount.getCity(), $carrierAtPaystub.getCity()) )
+
+then
+		consequenceBuilder.setRule("R14-5","Dados da Operadora divergente");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("A cidade no cabeçalho da fatura não confere com a mesma informação na ficha de arrecadação");
+
+        c.addAttribute("Campo Validado", "Cidade");
+        c.addAttribute("Na Fatura", $carrierAtAccount.getCity());
+        c.addAttribute("Na Ficha de Arrecadação", $carrierAtPaystub.getCity());
+        results.add(c);
+end
+
+/**
+ * R14.5F - Checking carrier state in Header against PaystubInformation
+ */
+rule "R14.5F - Check Carrier State"
+when
+	TIMAccount (
+			$carrierAtAccount : carrierAddress,
+			$carrierCode : carrierCode
+			)
+
+	PaystubSection (
+			$carrierAtPaystub : carrierAddress
+			)
+
+	eval (! areFieldsEqual($carrierAtAccount.getState(), $carrierAtPaystub.getState()) )
+
+then
+		consequenceBuilder.setRule("R14-5","Dados da Operadora divergente");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("O estado no cabeçalho da fatura não confere com a mesma informação na ficha de arrecadação");
+
+        c.addAttribute("Campo Validado", "Estado");
+        c.addAttribute("Na Fatura", $carrierAtAccount.getState());
+        c.addAttribute("Na Ficha de Arrecadação", $carrierAtPaystub.getState());
+        results.add(c);
+end

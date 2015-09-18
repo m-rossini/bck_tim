@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<locator xmlns:log4j="http://www.apache.org/log4j/">
+	<!--                      -->
+	<!--    log definition    -->
+	<!--                      -->
+	<log-service class-impl="br.com.auster.facelift.services.log.LogService">
+        <log4j:configuration xmlns:log4j="http://jakarta.apache.org/log4j/">
+	    </log4j:configuration>	
+	</log-service>		
+	
+	<!--                      -->
+	<!--  plugin definition   -->
+	<!--                      -->
+	<plugin-service class-impl="br.com.auster.facelift.services.plugin.impl.XMLPluginService">
+			<configuration executor="br.com.auster.facelift.services.plugin.impl.SimplePluginExecutor"> 
+				<plugins>
+					<!-- sends the request to the Billcheckout-Server process -->
+					<plugin plugin-point="webrequest.created"
+							priority="99"
+	                        class-impl="br.com.auster.dware.console.plugins.PostRequestToServer">
+						<parameters>
+							<parameter name="rmiserver.url">//localhost:2004/billcheckout</parameter>
+							<parameter name="chain.name">default</parameter>
+							<parameter name="chain.builder">bgh</parameter>
+						</parameters>
+					</plugin>
+					
+					<plugin plugin-point="webrequest.resumed"
+						class-impl="br.com.auster.dware.console.plugins.ResumeRequestToServer">
+						<parameters>
+							<parameter name="rmiserver.url">//localhost:2004/billcheckout</parameter>
+							<parameter name="chain.name">default</parameter>
+							<parameter name="chain.builder">bgh</parameter>
+						</parameters>
+					</plugin>					
+						
+					<!-- 
+						Triggers all report generations.
+					-->
+					<plugin plugin-point="webrequest.updated.status" trigger-value="3"
+						priority="99"
+						class-impl="br.com.auster.dware.console.plugins.SendReportGenerationCommand">
+						<parameters>
+							<parameter name="jms.factory">/billcheckout/QueueConnectionFactory</parameter>
+							<parameter name="jms.name">/topic/reportTopic</parameter>
+							<parameter name="report.name">billcheckout-portal</parameter>
+						</parameters>
+					</plugin>
+					<plugin plugin-point="webrequest.updated.status" trigger-value="4"
+						priority="99"
+						class-impl="br.com.auster.dware.console.plugins.SendReportGenerationCommand">
+						<parameters>
+							<parameter name="jms.factory">/billcheckout/QueueConnectionFactory</parameter>
+							<parameter name="jms.name">/topic/reportTopic</parameter>
+							<parameter name="report.name">billcheckout-portal</parameter>
+						</parameters>
+					</plugin>
+					
+					<!-- when any proc. request has changed status -->
+					<plugin	plugin-point="webrequest.updated.procRequest.status"
+						    class-impl="br.com.auster.dware.console.plugins.ProcRequestsFinishedPlugin"/>										
+				</plugins>
+			</configuration>
+	</plugin-service>
+	
+	<!--                      -->
+	<!--     audit conf.      -->
+	<!--                      -->
+	<audit-service class-impl="br.com.auster.facelift.services.audit.log4j.ResourceBundledLog4jAuditLog">
+		<configuration bundle-file="/br/com/auster/dware/console/audit/MessagesBundle">
+			<appender name="__AUDIT__" class="biz.minaret.log4j.DatedFileAppender">
+				<param name="Threshold" value="INFO" />
+				<param name="Directory" value="/appl/billcheckout/log" />
+				<param name="Prefix" value="audit-" />
+				<param name="Suffix" value=".log" />
+				<param name="Append" value="true" />
+				<layout class="org.apache.log4j.PatternLayout">
+					<param name="ConversionPattern" value="%d{ddMMyyyyHHmmss}|%m%n"/>
+				</layout>
+			</appender>
+       	</configuration>
+	</audit-service>
+
+	<!--                      -->
+	<!--   properties conf.   -->
+	<!--                      -->
+	<properties-service class-impl="br.com.auster.facelift.services.properties.MappedPropertyHandler">
+		<configuration default-realm="default">			
+			<realms>
+				<realm name="default"   file="conf/properties/default.properties"/>
+			</realms>
+       	</configuration>
+	</properties-service>
+	
+	<!--                      -->
+	<!-- services definition  -->
+	<!--                      -->
+	<services>
+		<service id="console.user" type="local" 
+             class-impl="br.com.auster.facelift.users.security.UserManagerImpl">
+			<configuration persistence="br.com.auster.persistence.jdbc.JNDIJDBCPersistenceService"
+			               policy="/appl/billcheckout/portal/security.properties">
+				<persistence-configuration jndi-name="/billcheckout/portalDB" tx-jndi="javax.transaction.TransactionManager"/>
+				<security file="conf/users/security.properties" security-context="bcportal"/>
+			</configuration>
+		</service>
+		<service id="console.request" type="local" 
+             class-impl="br.com.auster.facelift.requests.web.jdbc.WebRequestManagerImpl">
+			<configuration persistence="br.com.auster.persistence.jdbc.JNDIJDBCPersistenceService">
+				<persistence-configuration jndi-name="/billcheckout/portalDB"  tx-jndi="javax.transaction.TransactionManager"/>
+			</configuration>
+		</service>
+		<service id="searchAndStructureImpl" type="local" 
+             class-impl="br.com.auster.tim.billcheckout.bscs.SearchAndStructureImpl">
+		</service>
+		<service id="accountImpl" type="local" 
+             class-impl="br.com.auster.tim.billcheckout.bscs.AccountImpl">
+			 <configuration infobusUrl="t3://billcheck:billcheck@rjohpu12:10002"/> 			
+		</service>	
+		<service id="subscriberImpl" type="local" 
+             class-impl="br.com.auster.tim.billcheckout.bscs.SubscriberImpl">	
+             <configuration infobusUrl="t3://billcheck:billcheck@rjohpu12:10002"/> 			 				
+		</service>									
+	</services>
+</locator>

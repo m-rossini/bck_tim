@@ -1,0 +1,414 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.filter.request.BillcheckoutRequestWrapper;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Receipt;
+import br.com.auster.tim.billcheckout.util.NFNumberHelper;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+
+function boolean isLocalNFSeriesOK(String _nfSeries, String _uf) {
+   if ((_nfSeries == null) || (_uf == null)) {
+      return false;
+   }
+
+   // AA is valid for all UF
+   if ("AA".equals(_nfSeries)) {
+      return true;
+   }
+   if ("MG".equals(_uf)) {
+      // for MG, U is the other valid NF serie
+      return "U".equals(_nfSeries);
+   } else if ("SE".equals(_uf)) {
+      // for SE, B5 is the other valid NF serie
+      return "B5".equals(_nfSeries);
+   } else {
+      // for all other UFs, AB is the second valid NF serie
+      return "AB".equals(_nfSeries);
+   }
+}
+
+function boolean isLDNFSeriesOK(String _nfSeries, String _uf, String carrierCode) {
+   if ((_nfSeries == null) || (_uf == null) || (carrierCode == null)) {
+      return false;
+   }
+
+	if (carrierCode.equals("23")) {
+		if (_uf.equals("AM")) {
+			return _nfSeries.equals("5");
+		} else {
+			return _nfSeries.equals("4");
+		}
+	} else if (carrierCode.equals("15")) {
+		return _nfSeries.equals("G");
+	} else if (carrierCode.equals("21")) {
+		return _nfSeries.equals("A");
+	} else if (carrierCode.equals("14")) {
+		return _nfSeries.equals("C");
+	} else if (carrierCode.equals("31")) {
+		if (_uf.equals("RS")) {
+			return _nfSeries.equals("7");
+		} else if (_uf.equals("MG")) {
+			return _nfSeries.equals("U");
+		} else if (_uf.equals("MS")) {
+			return _nfSeries.equals("B");
+		} else if (_uf.equals("SP")) {
+			return _nfSeries.equals("6");
+		} else {
+			return _nfSeries.equals("5");
+		}
+	} else if (carrierCode.equals("36")) {
+		if (_uf.equals("PB") ||
+			_uf.equals("AM") ||
+			_uf.equals("PE") ||
+			_uf.equals("RN") ||
+			_uf.equals("PI") ||
+			_uf.equals("MG") ||
+			_uf.equals("CE") ||
+			_uf.equals("AL") ||
+			_uf.equals("RR") ||
+			_uf.equals("MA"))
+		{
+			return _nfSeries.equals("B");
+		} else {
+			return _nfSeries.equals("B6");
+		}
+	} else if (carrierCode.equals("25")) {
+		if (_uf.equals("MG")) {
+			return _nfSeries.equals("U");
+		} else if (_uf.equals("RJ") ||
+				   _uf.equals("PR") ||
+				   _uf.equals("SP") ||
+				   _uf.equals("RO"))
+		{
+		  	return _nfSeries.equals("F");
+		} else if (_uf.equals("SC") ||
+				   _uf.equals("TO") ||
+				   _uf.equals("RS") ||
+				   _uf.equals("MS") ||
+				   _uf.equals("MT") ||
+				   _uf.equals("GO") ||
+				   _uf.equals("DF") ||
+				   _uf.equals("AC"))
+		{
+			return _nfSeries.equals("T");
+		}
+	} else if (carrierCode.equals("32")) {
+		if (_uf.equals("RR") ||
+			_uf.equals("RN") ||
+			_uf.equals("PI") ||
+			_uf.equals("PE") ||
+			_uf.equals("ES") ||
+			_uf.equals("AP") ||
+			_uf.equals("AM"))
+		{
+			return _nfSeries.equals("9");
+		} else if (_uf.equals("RJ")) {
+			return _nfSeries.equals("10");
+		} else if (_uf.equals("PB")) {
+			return _nfSeries.equals("6");
+		} else if (_uf.equals("MS")) {
+			return _nfSeries.equals("B");
+		} else if (_uf.equals("MG")) {
+			return _nfSeries.equals("U");
+		} else {
+			return _nfSeries.equals("5");
+		}
+	} else if (carrierCode.equals("12")) {
+		if (_uf.equals("MG")) {
+			return _nfSeries.equals("U-11");
+		} else if (_uf.equals("SP") ||
+				   _uf.equals("MS") ||
+				   _uf.equals("GO"))
+		{
+			return _nfSeries.equals("U-8");
+		} else {
+			return _nfSeries.equals("U");
+		}
+	} else if (carrierCode.equals("41")) {
+		if (_uf.equals("MG")) {
+			return _nfSeries.equals("U4");
+		} else {
+			return _nfSeries.equals("B8");
+		}
+	}
+
+	return false;
+
+}
+
+function boolean isLocalNFSubSeriesOK(String _nfSubSeries, String _nfSeries, String _uf) {
+
+   if ((_nfSeries == null) || (_uf == null)) {
+      return false;
+   }
+
+   if (_uf.equals("SE") && _nfSeries.equals("B")) {
+   		return _nfSubSeries.equals("5");
+   } else {
+   		return _nfSubSeries.trim().equals("");
+   }
+
+}
+
+function boolean isLDNFSubSeriesOK(String _nfSeries, String _uf, String carrierCode) {
+
+   if ((_nfSeries == null) || (_uf == null) || (carrierCode == null)) {
+      return false;
+   }
+
+   if (carrierCode.equals("23")) {
+   		if(_uf.equals("PL")) {
+   			return _nfSeries.equals("C");
+   		} else {
+   			return _nfSeries.equals("A");
+   		}
+   } else if (carrierCode.equals("21")) {
+   		return _nfSeries.equals("5a");
+   } else if (carrierCode.equals("31")) {
+   		if (_uf.equals("MG") || _uf.equals("MS")) {
+   			return _nfSeries.equals("5");
+   		} else {
+   			return _nfSeries.trim().equals("");
+   		}
+   } else if (carrierCode.equals("36")) {
+   		if (_uf.equals("LO") ||
+   			_uf.equals("PB") ||
+   			_uf.equals("AM") ||
+   			_uf.equals("PE") ||
+   			_uf.equals("RN") ||
+   			_uf.equals("PI") ||
+   			_uf.equals("MG") ||
+   			_uf.equals("CE") ||
+   			_uf.equals("AL") ||
+   			_uf.equals("RR") ||
+   			_uf.equals("MA"))
+   		{
+   			return _nfSeries.equals("6");
+   		} else {
+   			return _nfSeries.trim().equals("");
+   		}
+   } else if (carrierCode.equals("25")) {
+   		if (_uf.equals("MG") || _uf.equals("SC")) {
+   			return _nfSeries.equals("6");
+   		} else if (_uf.equals("LO") ||
+   				   _uf.equals("PR")) {
+   			return _nfSeries.equals("1");
+   		} else if (_uf.equals("RJ") ||
+   				   _uf.equals("GO")) {
+   			return _nfSeries.equals("5");
+   		} else if (_uf.equals("PL") ||
+   				   _uf.equals("RS")) {
+   			return _nfSeries.equals("4");
+   		} else if (_uf.equals("SP") ||
+   				   _uf.equals("DF")) {
+   			return _nfSeries.equals("2");
+   		} else if (_uf.equals("TO")) {
+   			return _nfSeries.equals("9");
+   		} else if (_uf.equals("RO") ||
+   				   _uf.equals("MS")) {
+   			return _nfSeries.equals("3");
+   		} else if (_uf.equals("MT")) {
+   			return _nfSeries.equals("7");
+   		} else if (_uf.equals("AC")) {
+   			return _nfSeries.equals("8");
+   		}
+   } else if (carrierCode.equals("32")) {
+   		if (_uf.equals("MS")) {
+   			return _nfSeries.equals("5");
+   		} else if (_uf.equals("MG")) {
+   			return _nfSeries.equals("16");
+   		} else {
+   			return _nfSeries.trim().equals("");
+   		}
+   } else if (carrierCode.equals("12")) {
+   		if (_uf.equals("LO") ||
+   			_uf.equals("PL") ||
+   			_uf.equals("PR") ||
+   			_uf.equals("SC")) {
+   			return _nfSeries.equals("15");
+   		} else if (_uf.equals("PE") ||
+   				   _uf.equals("RN") ||
+   				   _uf.equals("PI") ||
+   				   _uf.equals("PB") ||
+   				   _uf.equals("CE") ||
+   				   _uf.equals("AL")) {
+   			return _nfSeries.equals("20");
+   		} else if (_uf.equals("BA") ||
+   				   _uf.equals("SE")) {
+   			return _nfSeries.equals("11");
+   		} else if (_uf.equals("AC") ||
+   				   _uf.equals("AM") ||
+   				   _uf.equals("AP") ||
+   				   _uf.equals("DF") ||
+   				   _uf.equals("ES") ||
+   				   _uf.equals("MA") ||
+   				   _uf.equals("MT") ||
+   				   _uf.equals("PA") ||
+   				   _uf.equals("RJ") ||
+   				   _uf.equals("RO") ||
+   				   _uf.equals("RR") ||
+   				   _uf.equals("RS") ||
+   				   _uf.equals("TO")) {
+   			return _nfSeries.equals("8");
+   		} else {
+   			return _nfSeries.trim().equals("");
+   		}
+   } else if (carrierCode.equals("14")) {
+   		return _nfSeries.trim().equals("");
+   } else if (carrierCode.equals("15")) {
+   		return _nfSeries.trim().equals("");
+   } else if (carrierCode.equals("41")) {
+   		return _nfSeries.trim().equals("");
+   }
+
+	return false;
+
+}
+
+
+
+/**
+ * Valida se a série da NF LOCAL está correta. A série de numa numeração de NF é contada a partir do 12o. caracter,
+ *   que necessariamente deve ser um hífen (-).
+ */
+rule "R06-2 - Validating Local NF Series"
+	salience 50
+	when
+
+		BillcheckoutRequestWrapper ( $request : request -> ( ($request.getAttributes().get("mode.id") != null) && ("S2".equals($request.getAttributes().get("mode.id"))) )
+		                           )
+
+		$nf : Receipt( $invNumber : receiptNbr,
+					   $carrierCode : carrierCode,
+					   $carrierState : carrierState,
+					   local == true
+					  )
+
+		eval ( ! isLocalNFSeriesOK(NFNumberHelper.findNFSeries($invNumber, $carrierCode, $carrierState), $carrierState) )
+
+	then
+		consequenceBuilder.setRule("R06-2","Erro série nota fiscal");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("A série da NF local não é válida.");
+		c.addAttribute("Número NF", $invNumber);
+		results.add(c);
+end
+
+
+/**
+ * Valida se a série da NF de LONGA DISTÂNCIA está correta. A série de numa numeração de NF é contada a partir do 12o. caracter,
+ *   que necessariamente deve ser um hífen (-).
+ */
+rule "R06-2 - Validating LD NF Series"
+	salience 50
+	when
+
+		BillcheckoutRequestWrapper ( $request : request -> ( ($request.getAttributes().get("mode.id") != null) && ("S2".equals($request.getAttributes().get("mode.id"))) )
+		                           )
+
+		$nf : Receipt( $invNumber : receiptNbr,
+					   $carrierCode : carrierCode,
+					   $carrierState : carrierState,
+					   local == false
+					  )
+
+		eval ( ! isLDNFSeriesOK(NFNumberHelper.findNFSeries($invNumber, $carrierCode, $carrierState), $carrierState, $carrierCode) )
+
+	then
+		consequenceBuilder.setRule("R06-2","Erro série nota fiscal");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("A série da NF Longa Distância não é válida.");
+		c.addAttribute("Número NF", $invNumber);
+		results.add(c);
+end
+
+/**
+ * Valida se a sub-série da NF LOCAL está correta. A sub-série de numa numeração de NF é contada a partir do segundo hífen (-).
+ */
+rule "R06-2 - Validating Local NF SubSeries"
+	salience 50
+	when
+
+		BillcheckoutRequestWrapper ( $request : request -> ( ($request.getAttributes().get("mode.id") != null) && ("S2".equals($request.getAttributes().get("mode.id"))) )
+		                           )
+
+		$nf : Receipt( $invNumber : receiptNbr,
+					   $carrierCode : carrierCode,
+					   $carrierState : carrierState,
+					   local == true
+					  )
+
+		eval ( ! isLocalNFSubSeriesOK(NFNumberHelper.findNFSubSeries($invNumber, $carrierCode, $carrierState), NFNumberHelper.findNFSeries($invNumber), $carrierState) )
+
+	then
+		consequenceBuilder.setRule("R06-2","Erro série nota fiscal");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("A sub-série da NF local não é válida.");
+		c.addAttribute("Número NF", $invNumber);
+		results.add(c);
+end
+
+/**
+ * Valida se a sub-série da NF de LONGA DISTÂNCIA está correta. A sub-série de numa numeração de NF é contada a partir do segundo hífen(-).
+ */
+rule "R06-2 - Validating LD NF SubSeries"
+	salience 50
+	when
+
+		BillcheckoutRequestWrapper ( $request : request -> ( ($request.getAttributes().get("mode.id") != null) && ("S2".equals($request.getAttributes().get("mode.id"))) )
+		                           )
+
+		$nf : Receipt( $invNumber : receiptNbr,
+					   $carrierCode : carrierCode,
+					   $carrierState : carrierState,
+					   local == false
+					  )
+
+		eval ( ! isLDNFSubSeriesOK(NFNumberHelper.findNFSubSeries($invNumber, $carrierCode, $carrierState), $carrierState, $carrierCode) )
+
+	then
+		consequenceBuilder.setRule("R06-2","Erro série nota fiscal");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("A sub-série da NF Longa Distância não é válida.");
+		c.addAttribute("Número NF", $invNumber);
+		results.add(c);
+end

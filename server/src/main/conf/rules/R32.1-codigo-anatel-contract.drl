@@ -1,0 +1,182 @@
+#created on: 17/04/2009
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.tim.om.invoice.ServiceReceiptDetail;
+import br.com.auster.tim.om.invoice.ContractInfoSection;
+
+import br.com.auster.tim.billcheckout.bscs.AnatelCodeVO;
+
+import br.com.auster.common.rules.GlobalForLog;
+
+
+#declare any global variables here
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global br.com.auster.tim.billcheckout.bscs.AnatelCodeCache anatelCodeCache;
+global java.util.List results;
+
+
+// ------------------------------------
+//
+// Running over 51000000 occurrences
+//
+// ------------------------------------
+
+
+rule "R32-1 - Validate when no package is found - Contract version"
+salience 80
+when
+	Account ( $uf :carrierState,
+	          $carrierCode : carrierCode )
+
+	ContractInfoSection ( $rateplan : rateplanShdes != null,
+						  $rateplanAnatelCode : anatelCode != null,
+						  $rateplanName : ratePlan,
+						  $contractNumber : contractNumber,
+						  $accessNumber : accessNbr    
+					    ) 
+
+	// cannot find package for current plan					   
+	not ( ServiceReceiptDetail ( subscription == false, 
+								 packageShortName != null,
+	                             anatelCode != null,
+	                             rateplanShdes == $rateplan ) )
+		
+then
+		
+	// check if plan is one of those with more than one package associated
+	if (! anatelCodeCache.hasMoreThanOnePackage($rateplan, $uf)) {
+	
+		// there is no consequence to be built
+		String consequenceDescription = null;
+		
+		// retreive anatel code for current plan, without package (no package is defined by an empty package short name)
+		AnatelCodeVO retrievedAnatelCode = (AnatelCodeVO) anatelCodeCache.getFromCache( AnatelCodeVO.createKey($rateplan, null, $uf) ); 
+		if (retrievedAnatelCode == null) {
+			consequenceDescription = "A combinação plano/pacote/UF deste Contrato não possui Código Anatel cadastrado."; 
+		} else 
+		// if anatel code from plan differs from the one retrieved
+		if (! $rateplanAnatelCode.equals(retrievedAnatelCode.getAnatelCode())) {
+			consequenceDescription = "Código Anatel da combinação Plano/Pacote/UF não corresponde ao código cadastrado."; 
+		}
+		
+		if (consequenceDescription != null) {
+			consequenceBuilder.setRule("R32-1","Validação do Código Anatel");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+			
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription(consequenceDescription); 
+			c.addAttribute("Número do Contrato", $contractNumber);
+			c.addAttribute("Número do Acesso", $accessNumber);			
+			c.addAttribute("Plano", $rateplanName);
+			c.addAttribute("Código Anatel do Plano", $rateplanAnatelCode);
+			c.addNullAttribute("Pacote");
+			c.addNullAttribute("Código Anatel do Pacote");
+			if (retrievedAnatelCode == null) {
+				c.addNullAttribute("Código Anatel Cadastrado");
+			} else {
+				c.addAttribute("Código Anatel Cadastrado", retrievedAnatelCode.getAnatelCode());
+			}
+			
+			results.add(c);
+		}
+	}
+end
+
+rule "R32-1 - Validate when there is a package - Contract version"
+salience 80
+when
+	Account ( $uf :carrierState,
+	          $carrierCode : carrierCode )
+
+	ContractInfoSection ( $rateplan : rateplanShdes != null,
+						  $rateplanAnatelCode : anatelCode != null,
+						  $rateplanName : ratePlan,
+						  $contractNumber : contractNumber,
+						  $accessNumber : accessNbr    
+					    ) 
+		
+	// found package for current plan					   
+	ServiceReceiptDetail ( subscription == false, 
+	                       anatelCode != null,
+	                       $packageCode : packageShortName != null,
+	                       $packageAnatelCode : anatelCode != null,
+	                        rateplanShdes == $rateplan )
+		
+then
+	
+	// check if plan is one of those with more than one package associated
+	if (! anatelCodeCache.hasMoreThanOnePackage($rateplan, $uf)) {
+	
+		// there is no consequence to be built
+		String consequenceDescription = null;
+		
+		// retreive anatel code for current plan
+		AnatelCodeVO retrievedAnatelCode = (AnatelCodeVO) anatelCodeCache.getFromCache( AnatelCodeVO.createKey($rateplan, $packageCode, $uf) ); 
+		if (retrievedAnatelCode == null) {
+			consequenceDescription = "A combinação plano/pacote/UF deste Contrato não possui Código Anatel cadastrado."; 
+		} else {
+			boolean rateplanOk = $rateplanAnatelCode.equals(retrievedAnatelCode.getAnatelCode()); 
+			boolean packageOk = $packageAnatelCode.equals(retrievedAnatelCode.getAnatelCode());
+			
+			// if anatel code from plan & package differs from the one retrieved
+			if ((!rateplanOk) && (!packageOk)) {
+				// when they are equal
+				if ($rateplanAnatelCode.equals($packageAnatelCode)) {
+					consequenceDescription = "Código Anatel da combinação Plano/Pacote/UF não corresponde ao código cadastrado.";
+				// when they are different
+				} else {
+					consequenceDescription = "Os Códigos Anatel do Plano e do Pacote não correspondem ao código cadastrado.";
+				}
+			// when only package is wrong
+			} else if (rateplanOk && (!packageOk)) {
+				consequenceDescription = "O Código Anatel do Pacote não corresponde ao código cadastrado.";
+			// when only plan is wrong 
+			} else if (packageOk && (!rateplanOk)) {
+				consequenceDescription = "O Código Anatel do Plano não corresponde ao código cadastrado.";
+			}
+		}
+	
+		if (consequenceDescription != null) {
+			consequenceBuilder.setRule("R32-1","Validação do Código Anatel");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+		
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription(consequenceDescription); 
+			c.addAttribute("Número do Contrato", $contractNumber);
+			c.addAttribute("Número do Acesso", $accessNumber);
+			c.addAttribute("Plano", $rateplanName);
+			c.addAttribute("Código Anatel do Plano", $rateplanAnatelCode);
+			c.addAttribute("Pacote", $packageCode);
+			c.addAttribute("Código Anatel do Pacote", $packageAnatelCode);
+			if (retrievedAnatelCode == null) {
+				c.addNullAttribute("Código Anatel Cadastrado");
+			} else {
+				c.addAttribute("Código Anatel Cadastrado", retrievedAnatelCode.getAnatelCode());
+			}
+			
+			results.add(c);
+		}
+	}
+end
+
+

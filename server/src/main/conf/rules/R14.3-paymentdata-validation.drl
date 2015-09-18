@@ -1,0 +1,242 @@
+package br.com.auster.tim.billchekout;
+
+import java.util.Iterator;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+import br.com.auster.om.invoice.ChargedTax;
+import br.com.auster.tim.om.invoice.PaystubSection;
+import br.com.auster.tim.om.invoice.RetentionTaxesSection;
+
+import br.com.auster.common.lang.NamedDouble;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+/**
+ * RULE #14.3: Validação de Dados de Pagamento
+ */
+
+# Verificando se este contrato possui retenções de impostos
+rule "Regra 14-3 - Init. Taxes Retention"
+	salience 90
+	when
+		not (NamedDouble (name == "R14.3") )
+	then
+		assert(new NamedDouble("R14.3", 0));
+end
+
+# Atualizando o acumulator de retenção com os impostos
+rule "Regra 14-3 - Saving Taxes Retention"
+	salience 80
+	when
+		$retention : RetentionTaxesSection()
+
+		$accumulator : NamedDouble( name == "R14.3" )
+	then
+		for (Iterator it = $retention.getTaxes().iterator(); it.hasNext(); ) {
+			ChargedTax tax = (ChargedTax) it.next();
+			$accumulator.addTo( tax.getTaxAmount() );
+		}
+end
+
+#14-3A - Start Date é divergente
+rule "Regra 14-3A"
+	salience 10
+	when
+		Account(
+			$carrierCode : carrierCode ,
+			$accNo : accountNumber)
+
+		$inv : Invoice(
+			$cycleStartDate : cycleStartDate)
+
+		PaystubSection(
+			$payStartDate :	cycleStartDate != $cycleStartDate )
+	then
+		consequenceBuilder.setRule("R14-3","Dados da Ficha de Arrecadação");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Data de inicio do ciclo divergente");
+
+        c.addAttribute("Na Fatura", $cycleStartDate, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Na Ficha de Arrecadação", $payStartDate, ConsequenceAttributeList.AttributeType.DATE);
+        c.addNullAttribute("Retenção de Impostos");
+        results.add(c);
+end
+
+#14-3B - End Date é divergente
+rule "Regra 14-3B"
+	salience 10
+	when
+		Account(
+			$carrierCode : carrierCode ,
+			$accNo : accountNumber)
+
+		$inv : Invoice(
+			$cycleEndDate : cycleEndDate)
+
+		PaystubSection(
+			$payEndDate : cycleEndDate != $cycleEndDate )
+	then
+		consequenceBuilder.setRule("R14-3","Dados da Ficha de Arrecadação");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Data de fim do ciclo divergente");
+
+        c.addAttribute("Na Fatura", $cycleEndDate, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Na Ficha de Arrecadação", $payEndDate, ConsequenceAttributeList.AttributeType.DATE);
+        c.addNullAttribute("Retenção de Impostos");
+        results.add(c);
+end
+
+#14-3C - Issue Date é divergente
+rule "Regra 14-3C"
+	salience 10
+	when
+		Account(
+			$carrierCode : carrierCode ,
+			$accNo : accountNumber)
+
+		$inv : Invoice(
+			$issueDate : issueDate)
+
+		PaystubSection(
+			$payIssueDate : issueDate != $issueDate )
+	then
+		consequenceBuilder.setRule("R14-3","Dados da Ficha de Arrecadação");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Data de emissão divergente");
+
+        c.addAttribute("Na Fatura", $issueDate, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Na Ficha de Arrecadação", $payIssueDate, ConsequenceAttributeList.AttributeType.DATE);
+        c.addNullAttribute("Retenção de Impostos");
+        results.add(c);
+end
+
+#14-3D - Due Date é divergente
+rule "Regra 14-3D"
+	salience 10
+	when
+		Account(
+			$carrierCode : carrierCode ,
+			$accNo : accountNumber)
+
+		$inv : Invoice(
+			$dueDate : dueDate)
+
+		PaystubSection(
+			$payDueDate : dueDate != $dueDate )
+	then
+		consequenceBuilder.setRule("R14-3","Dados da Ficha de Arrecadação");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Data de vencimento divergente");
+
+        c.addAttribute("Na Fatura", $dueDate, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Na Ficha de Arrecadação", $payDueDate, ConsequenceAttributeList.AttributeType.DATE);
+        c.addNullAttribute("Retenção de Impostos");
+        results.add(c);
+end
+
+#14-3E - Total é Divergente
+rule "Regra 14-3E"
+	salience 10
+	when
+		Account(
+			$carrierCode : carrierCode ,
+			$accNo : accountNumber)
+
+		$inv : Invoice(
+			$tot : totalAmount)
+
+		PaystubSection(
+			originalTotalAmount != null,
+			$balance: totalAmount
+		)
+
+		$accumulator : NamedDouble( name == "R14.3" )
+
+	then
+		// Retenções são sempre negativas
+		double totalFromInvoice = $tot.doubleValue() + $accumulator.getValue();
+		if ( Math.abs( Math.abs($balance.doubleValue()) - Math.abs(totalFromInvoice) ) >= 0.01 ) {
+			consequenceBuilder.setRule("R14-3","Dados da Ficha de Arrecadação");
+			consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+			consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+			consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+			consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+			consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+			TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+			c.setDescription("Valores divergentes");
+
+	        c.addAttribute("Na Fatura", $tot, ConsequenceAttributeList.AttributeType.DOUBLE);
+	        c.addAttribute("Na Ficha de Arrecadação", $balance, ConsequenceAttributeList.AttributeType.DOUBLE);
+	        c.addDoubleAttribute("Retenção de Impostos", $accumulator.getValue());
+	        results.add(c);
+	   }
+end
+
+#14-3F - Total é Divergente
+rule "Regra 14-3F"
+	salience 10
+	when
+		Account(
+			$carrierCode : carrierCode ,
+			$accNo : accountNumber)
+
+		$inv : Invoice(
+			$tot : totalAmount)
+
+		PaystubSection(
+			$balance : originalTotalAmount -> ( ($balance == null) || ($balance.trim().length() <= 0) )
+			          )
+	then
+		consequenceBuilder.setRule("R14-3","Dados da Ficha de Arrecadação");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Valor total inexistente na ficha de arrecadação");
+
+        c.addAttribute("Na Fatura", $tot, ConsequenceAttributeList.AttributeType.DOUBLE);
+        c.addNullAttribute("Na Ficha de Arrecadação");
+        c.addNullAttribute("Retenção de Impostos");
+        results.add(c);
+end

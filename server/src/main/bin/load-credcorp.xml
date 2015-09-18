@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="load-usages" default="run">
+
+  <property environment="env" />
+  <property name="config.builder" value="default" />
+  <property name="config.dir" value="conf" />
+
+  <!-- The classpath -->
+  <path id="classpath.base">
+    <fileset dir="${basedir}/lib" includes="*,**/*" excludes="cglib*.jar"/>
+    <pathelement location="${ant.home}/lib/ant.jar" />
+  	<pathelement location="${config.dir}" />
+  </path>
+
+
+  <target name="prepare">
+  	<delete failonerror="true" dir="${env.BCK_LOADEROUTPUTDIR}/credcorp" includeemptydirs="true"/>
+  	<mkdir dir="${env.BCK_LOADEROUTPUTDIR}/credcorp"/>
+  </target>
+
+
+  <target name="run" depends="prepare">
+
+    <tstamp prefix="start">
+      <format property="TIMESTAMP" pattern="dd/MM/yyyy HH:mm:ss.SSS" />
+      <format property="DSTAMP" pattern="yyyy-MM-dd" />
+    </tstamp>
+    <echo message="Current Timestamp: ${start.TIMESTAMP}" />
+    <echo message="Processing files - please wait..." />
+
+    <java classname="br.com.auster.tim.billcheckout.CredcorpBootstrap"
+          classpathref="classpath.base"
+          output="${env.BCK_BASEDIR}/log/credcorp.out"
+          error="${env.BCK_BASEDIR}/log/credcorp.err"
+    	  append="false"
+          resultproperty="java.result"
+          fork="true"
+          maxmemory="${env.BCK_LOADERMEM}"
+          dir="${basedir}">
+      <jvmarg value="-server" />
+      <jvmarg value="-Xms${env.BCK_LOADERMEM}" />
+      <jvmarg value="-Xss256K" />
+      <sysproperty key="app.name" value="AusterCredcorpLoader" />
+      <sysproperty key="java.awt.headless" value="true" />
+      <sysproperty key="com.sun.management.jmxremote" value="true" />
+      <sysproperty key="br.com.auster.license.path"
+        value="${basedir}/license.bin"/>
+      <sysproperty key="br.com.auster.juglib.dir" value="${basedir}/lib"/>
+      <sysproperty key="jdbc.drivers"
+    	           value="org.apache.commons.dbcp.PoolingDriver:oracle.jdbc.driver.OracleDriver"/>      
+
+      <sysproperty key="tim.billcheckout.xstream.basedir" value="${env.BCK_LOADEROUTPUTDIR}/credcorp"/>
+      <sysproperty key="tim.billcheckout.xstream.filename" value="credcorp.xml.gz"/>
+
+      <arg value="-x" />
+      <arg value="${basedir}/${config.dir}/credcorp.xml" />
+      <arg value="-b" />
+      <arg value="default" />
+      <arg value="-a" />
+      <arg value="{{bgh={{filenames=${input.file.path}}}}}" />
+      <arg line="-s false"/>
+      <arg line="-u 10000000 -o ASC"/>
+    </java>
+
+    <echo message="Done!" />
+    <tstamp prefix="end">
+      <format property="TIMESTAMP" pattern="dd/MM/yyyy HH:mm:ss.SSS" />
+    </tstamp>
+    <echo message="Current Timestamp: ${end.TIMESTAMP}" />
+
+
+    <fail message="Credcorp Loader failed!! Please see the log files for more information.">
+      <condition>
+        <or>
+          <not>
+            <isset property="java.result" />
+          </not>
+          <not>
+            <equals arg1="${java.result}" arg2="0" />
+          </not>
+        </or>
+      </condition>
+    </fail>
+
+  </target>
+
+</project>

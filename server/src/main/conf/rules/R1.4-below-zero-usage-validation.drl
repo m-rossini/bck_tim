@@ -1,0 +1,61 @@
+package br.com.auster.tim.billchekout;
+
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder;
+import br.com.auster.billcheckout.consequence.Consequence;
+import br.com.auster.billcheckout.consequence.ConsequenceAttributeList;
+import br.com.auster.billcheckout.consequence.telco.TelcoConsequence;
+import br.com.auster.billcheckout.consequence.telco.AccountDimension;
+import br.com.auster.billcheckout.consequence.telco.GeographicDimension;
+import br.com.auster.billcheckout.consequence.telco.TimeDimension;
+import br.com.auster.billcheckout.consequence.telco.CarrierDimension;
+import br.com.auster.billcheckout.consequence.telco.CycleDimension;
+
+import br.com.auster.om.invoice.Account;
+import br.com.auster.om.invoice.Invoice;
+
+import br.com.auster.tim.om.invoice.ContractInfoSection;;
+import br.com.auster.tim.om.invoice.ContractUsageGroupSubsection;
+import br.com.auster.tim.om.invoice.TIMUsageDetail;
+
+global br.com.auster.billcheckout.consequence.DimensionCache dimensionCache;
+global br.com.auster.billcheckout.consequence.telco.TelcoConsequenceBuilder consequenceBuilder;
+global java.util.List results;
+
+/**
+ * RULE #1.4: Usage Calls (Voice, SMS, Data) with charged value below ZERO (Negative)
+ */
+rule "Regra 1-4A"
+	salience 0
+	when
+		TIMUsageDetail ( $amt : totalAmount < 0,
+						 $date : usageDate,
+						 $time : usageTime,
+						 $svc : serviceDescription,
+						 $calling : channelId,
+						 $called : calledNumber,
+						 $contractNo : contractNumber
+					   )
+
+		Account( $carrierCode : carrierCode )
+	then
+		consequenceBuilder.setRule("R01-4","Voz,Dados,SMS com valor negativo");
+		consequenceBuilder.setAccount((AccountDimension) dimensionCache.getFromCache("account"));
+		consequenceBuilder.setGeographics((GeographicDimension) dimensionCache.getFromCache("geo"));
+		consequenceBuilder.setTime((TimeDimension) dimensionCache.getFromCache("time"));
+		consequenceBuilder.setCycle((CycleDimension) dimensionCache.getFromCache("cycle"));
+		consequenceBuilder.setCarrier((CarrierDimension) dimensionCache.getFromCache($carrierCode));
+
+		TelcoConsequence c = (TelcoConsequence) consequenceBuilder.getConsequence();
+		c.setDescription("Uso com valor inferior à zero");
+
+        c.addAttribute("Contrato", $contractNo);
+        c.addAttribute("Valor do Uso", $amt);
+        c.addAttribute("Número Chamado", $called);
+        c.addAttribute("Número Chamador", $calling);
+        c.addAttribute("Serviço do Uso", $svc);
+        c.addAttribute("Data da Chamada", $date, ConsequenceAttributeList.AttributeType.DATE);
+        c.addAttribute("Hora da Chamada", $time, ConsequenceAttributeList.AttributeType.TIME);
+
+        results.add(c);
+end
+

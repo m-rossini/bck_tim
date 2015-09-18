@@ -1,0 +1,5 @@
+1000;tariff 1;tar1;A
+2000;tariff 2;tar2;B
+3000;tariff 3;tar3;C
+0000;tariff X;tar1;B
+0010;tariff Y;tarY;B

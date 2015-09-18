@@ -1,0 +1,60 @@
+<?xml version = "1.0" encoding = "UTF-8"?>
+<root>
+	<sql:configuration xmlns:sql="http://www.auster.com.br/common/sql/">
+		
+		<sql:statements>
+
+			<sql:statement name="RequestsFinished">
+				<sql:query>
+	        select b.latest_status, count(b.request_id) from proc_request b  
+					 join web_request_requests a on a.proc_request_id = b.request_id  
+					 where a.web_request_id = ? group by b.latest_status
+				</sql:query>
+				<sql:param index="1" type="Long" />										
+			</sql:statement>
+	
+			<sql:statement name="TransactionFinishedSelect">
+				<sql:query>
+					select start_date, request_status, end_date, owner_id from web_request where request_id = ?
+				</sql:query>
+				<sql:param index="1" type="Long" />										
+			</sql:statement>
+	
+			<sql:statement name="TransactionFinishedUpdate">
+				<sql:query>
+					update web_request set request_status = ? , end_date = ? where request_id = ?
+				</sql:query>
+				<sql:param index="1" type="Integer" />										
+				<sql:param index="2" type="Timestamp" />													
+				<sql:param index="3" type="Long" />																
+			</sql:statement>
+	
+			<sql:statement name="PackageCache.selectNonLazy">
+				<sql:query>
+					SELECT a.OBJID, a.SHORT_DESC, a.DESCRIPTION, a.CUSTOM_1, a.CUSTOM_2, a.CUSTOM_3
+       				FROM QLF_PACKAGE a
+				</sql:query>
+			</sql:statement>
+	
+			<sql:statement name="PackageCache.selectLazy">
+				<sql:query>
+					SELECT a.OBJID, a.SHORT_DESC, a.DESCRIPTION, a.CUSTOM_1, a.CUSTOM_2, a.CUSTOM_3
+       				FROM QLF_PACKAGE a
+      				WHERE a.OBJID = ?
+				</sql:query>
+				<sql:param index="1" type="Long" />
+			</sql:statement>
+	
+			<sql:statement name="PackageCache.selectLazyAlternate">
+				<sql:query>
+					SELECT a.OBJID, a.SHORT_DESC, a.DESCRIPTION, a.CUSTOM_1, a.CUSTOM_2, a.CUSTOM_3
+       				FROM QLF_PACKAGE a
+      				WHERE a.DESCRIPTION = ?
+				</sql:query>
+				<sql:param index="1" type="String" />
+			</sql:statement>
+												
+		</sql:statements>
+		
+	</sql:configuration>
+</root>

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<!DOCTYPE hibernate-mapping PUBLIC
+        "-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+        "etc/hibernate-mapping-3.0.dtd">
+
+<hibernate-mapping>
+
+    <class lazy="false"
+        name="br.com.auster.tim.billcheckout.model.ProgressiveDiscountRates"
+        table="PROG_DISCOUNT_RATES">
+
+		<!-- PK for this class -->
+        <id name="uid"
+            column="OBJID"
+            type="long"
+            unsaved-value="0">
+            <generator class="sequence">
+                <param name="sequence">progressive_discount_rates_uid</param>
+        	</generator>
+        </id>
+
+        <property
+            name="lowerLimit"
+            type="double"
+            update="true"
+            insert="true"
+            column="LOWER_LIMIT"
+            not-null="true"/>
+
+        <property
+            name="upperLimit"
+            type="double"
+            update="true"
+            insert="true"
+            column="UPPER_LIMIT"
+            not-null="false"/>
+
+        <property
+            name="discountRate"
+            type="double"
+            update="true"
+            insert="true"
+            column="DISCOUNT_RATE"
+            not-null="true"/>        
+
+		<many-to-one
+			name="parent"
+			class="br.com.auster.tim.billcheckout.model.ProgressiveDiscount"
+			update="false"
+            insert="false"
+			column="DISC_UID"
+			not-null="true"/>
+
+   </class>
+
+</hibernate-mapping>
